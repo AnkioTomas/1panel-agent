@@ -33,6 +33,43 @@ need_root() {
   [[ "$(id -u)" -eq 0 ]] || die "run as root (curl ... | sudo bash)"
 }
 
+# Master takeover requires a local 1Panel.
+require_1panel() {
+  local ok=0
+  if [[ -f /opt/1panel/db/core.db ]]; then
+    ok=1
+  elif have_cmd 1pctl; then
+    ok=1
+  elif systemctl list-unit-files 1panel-core.service 2>/dev/null | grep -q 1panel-core.service; then
+    ok=1
+  elif [[ -x /usr/bin/1panel ]] || [[ -x /usr/local/bin/1panel ]]; then
+    ok=1
+  fi
+  if [[ "$ok" -ne 1 ]]; then
+    echo "error: 未检测到本机 1Panel，无法安装 Master。" >&2
+    echo >&2
+    echo "请先安装并启动 1Panel，再重新执行本脚本。" >&2
+    echo "  官方安装: https://1panel.cn / https://github.com/1Panel-dev/1Panel" >&2
+    echo >&2
+    echo "检测项（任一存在即可）：" >&2
+    echo "  - /opt/1panel/db/core.db" >&2
+    echo "  - 命令 1pctl" >&2
+    echo "  - systemd 单元 1panel-core.service" >&2
+    exit 1
+  fi
+  if systemctl list-unit-files 1panel-core.service 2>/dev/null | grep -q 1panel-core.service; then
+    if ! systemctl is-active --quiet 1panel-core.service; then
+      warn "检测到 1panel-core.service 但未运行，尝试启动…"
+      systemctl start 1panel-core.service || die "无法启动 1panel-core，请先修好 1Panel 再装 Master"
+      sleep 1
+    fi
+  fi
+  if [[ ! -f /opt/1panel/db/core.db ]]; then
+    die "已检测到 1Panel 组件，但缺少 /opt/1panel/db/core.db（面板未初始化？）"
+  fi
+  log "1Panel OK: /opt/1panel/db/core.db"
+}
+
 detect_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo amd64 ;;
@@ -303,6 +340,7 @@ print_next_steps() {
 main() {
   need_root
   have_cmd systemctl || die "systemd required"
+  require_1panel
 
   local os arch tag asset base tmpdir ver
   os="$(detect_os)"
