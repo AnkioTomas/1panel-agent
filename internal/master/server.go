@@ -2,13 +2,18 @@ package master
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
 
+	"1panel-agent/internal/config"
+	"1panel-agent/internal/panel"
 	"1panel-agent/internal/protocol"
 
 	"github.com/coder/websocket"
@@ -16,42 +21,147 @@ import (
 )
 
 type Server struct {
-	Listen string
-	Token  string
-	reg    *Registry
+	Listen     string
+	Token      string
+	PublicHost string
+	Entrance   string
+	PanelUser  string
+	PanelPass  string
+	LocalPanel string // http://127.0.0.1:internal
+	reg        *Registry
+	localProxy *httputil.ReverseProxy
 }
 
-func New(listen, token string) *Server {
-	return &Server{
-		Listen: listen,
-		Token:  token,
-		reg:    NewRegistry(),
+type Options struct {
+	Listen     string
+	Token      string
+	PublicHost string
+	Entrance   string
+	PanelUser  string
+	PanelPass  string
+	LocalPanel string
+	Takeover   bool
+	DBPath     string
+}
+
+func New(opts Options) (*Server, error) {
+	state, err := config.LoadMasterOrEmpty()
+	if err != nil {
+		return nil, err
 	}
+	if opts.Token != "" {
+		state.Token = opts.Token
+	}
+	if opts.PanelUser != "" {
+		state.PanelUser = opts.PanelUser
+	}
+	if opts.PanelPass != "" {
+		state.PanelPassword = opts.PanelPass
+	}
+	if opts.PublicHost != "" {
+		state.PublicHost = opts.PublicHost
+	}
+	if opts.Entrance != "" {
+		state.Entrance = opts.Entrance
+	}
+
+	listen := opts.Listen
+	localPanel := opts.LocalPanel
+	entrance := state.Entrance
+
+	if opts.Takeover {
+		pub, internal, ent, err := EnsureTakeover(opts.DBPath, state)
+		if err != nil {
+			return nil, err
+		}
+		entrance = ent
+		if listen == "" {
+			listen = fmt.Sprintf(":%d", pub)
+		}
+		if localPanel == "" {
+			localPanel = panel.LocalPanelURL(internal)
+		}
+		_ = config.SaveMaster(state)
+	}
+
+	if state.Token == "" {
+		return nil, fmt.Errorf("token required")
+	}
+	if listen == "" {
+		listen = ":8080"
+	}
+	if localPanel == "" && state.InternalPort > 0 {
+		localPanel = panel.LocalPanelURL(state.InternalPort)
+	}
+
+	s := &Server{
+		Listen:     listen,
+		Token:      state.Token,
+		PublicHost: state.PublicHost,
+		Entrance:   entrance,
+		PanelUser:  state.PanelUser,
+		PanelPass:  state.PanelPassword,
+		LocalPanel: localPanel,
+		reg:        NewRegistry(),
+	}
+	if s.LocalPanel != "" {
+		u, err := url.Parse(s.LocalPanel)
+		if err != nil {
+			return nil, err
+		}
+		s.localProxy = httputil.NewSingleHostReverseProxy(u)
+		s.localProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, "local 1Panel unavailable: "+err.Error(), http.StatusBadGateway)
+		}
+	}
+	return s, nil
 }
 
 func (s *Server) Run() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
+	mux.HandleFunc("/__mp/", s.handleMP)
 	mux.HandleFunc("/n/", s.handleProxy)
+	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{
 		Addr:              s.Listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Printf("master listening on %s", s.Listen)
+	log.Printf("master listening on %s (local panel=%s entrance=%s)", s.Listen, s.LocalPanel, s.Entrance)
 	return srv.ListenAndServe()
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/__mp" {
+		http.Redirect(w, r, "/__mp/", http.StatusFound)
 		return
 	}
-	agents := s.reg.List()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = indexTmpl.Execute(w, agents)
+	// Active remote node (cookie): root-path tunnel so 1Panel absolute /assets work.
+	if c, err := r.Cookie("mp_node"); err == nil && c.Value != "" {
+		if sess, ok := s.reg.Get(c.Value); ok {
+			targetPath := r.URL.Path
+			if r.URL.RawQuery != "" {
+				targetPath += "?" + r.URL.RawQuery
+			}
+			if isWebSocket(r) {
+				s.proxyWebSocket(w, r, sess, targetPath, "")
+				return
+			}
+			s.proxyHTTP(w, r, sess, targetPath, "")
+			return
+		}
+	}
+	if s.localProxy != nil {
+		s.localProxy.ServeHTTP(w, r)
+		return
+	}
+	if r.URL.Path == "/" {
+		http.Redirect(w, r, "/__mp/", http.StatusFound)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
@@ -83,9 +193,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "bad register")
 		return
 	}
-
 	if err := protocol.WriteJSON(netConn, protocol.RegisterOK{OK: true}); err != nil {
-		log.Printf("agent register ack: %v", err)
 		_ = conn.Close(websocket.StatusInternalError, "ack failed")
 		return
 	}
@@ -213,6 +321,9 @@ func rewriteHeaderValue(key, value, prefix string) string {
 }
 
 func rewriteLocation(loc, prefix string) string {
+	if prefix == "" {
+		return loc
+	}
 	u, err := url.Parse(loc)
 	if err != nil {
 		return loc
@@ -236,6 +347,9 @@ func rewriteLocation(loc, prefix string) string {
 }
 
 func rewriteSetCookie(v, prefix string) string {
+	if prefix == "" {
+		return v
+	}
 	parts := strings.Split(v, ";")
 	for i, p := range parts {
 		trim := strings.TrimSpace(p)
@@ -273,7 +387,6 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		http.Error(w, "tunnel write meta: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	// Empty body for WS upgrade request.
 	if err := protocol.CopyChunks(stream, http.NoBody); err != nil {
 		http.Error(w, "tunnel write body: "+err.Error(), http.StatusBadGateway)
 		return
@@ -333,7 +446,6 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		return
 	}
 
-	// After 101, remaining stream bytes are raw WebSocket frames (not chunked).
 	errc := make(chan error, 2)
 	go func() {
 		_, err := io.Copy(stream, clientConn)
@@ -344,4 +456,27 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		errc <- err
 	}()
 	<-errc
+}
+
+// AdvertiseHost returns host:port for agent register command.
+func (s *Server) AdvertiseHost(r *http.Request) string {
+	if s.PublicHost != "" {
+		if strings.Contains(s.PublicHost, ":") {
+			return s.PublicHost
+		}
+		_, port, _ := net.SplitHostPort(s.Listen)
+		if port == "" {
+			if strings.HasPrefix(s.Listen, ":") {
+				port = strings.TrimPrefix(s.Listen, ":")
+			} else {
+				port = "80"
+			}
+		}
+		return s.PublicHost + ":" + port
+	}
+	host := r.Host
+	if host == "" {
+		host = s.Listen
+	}
+	return host
 }

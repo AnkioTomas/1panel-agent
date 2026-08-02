@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -33,8 +35,10 @@ func main() {
 }
 
 func runMaster(args []string) error {
-	listen := ":8080"
-	token := ""
+	opts := master.Options{
+		Takeover: true,
+		DBPath:   "",
+	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--listen":
@@ -42,21 +46,85 @@ func runMaster(args []string) error {
 			if i >= len(args) {
 				return fmt.Errorf("--listen needs a value")
 			}
-			listen = args[i]
+			opts.Listen = args[i]
 		case "--token":
 			i++
 			if i >= len(args) {
 				return fmt.Errorf("--token needs a value")
 			}
-			token = args[i]
+			opts.Token = args[i]
+		case "--host":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--host needs a value")
+			}
+			opts.PublicHost = args[i]
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			opts.PanelUser = args[i]
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			opts.PanelPass = args[i]
+		case "--entrance":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--entrance needs a value")
+			}
+			opts.Entrance = args[i]
+		case "--no-takeover":
+			opts.Takeover = false
+		case "--upstream":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--upstream needs a value")
+			}
+			opts.LocalPanel = args[i]
 		default:
 			return fmt.Errorf("unknown master flag: %s", args[i])
 		}
 	}
-	if token == "" {
-		return fmt.Errorf("--token is required")
+
+	if opts.Token == "" {
+		if st, err := config.LoadMaster(); err == nil && st.Token != "" {
+			opts.Token = st.Token
+		} else {
+			tok, err := randomToken()
+			if err != nil {
+				return err
+			}
+			opts.Token = tok
+			fmt.Fprintf(os.Stderr, "generated token: %s\n", opts.Token)
+		}
 	}
-	return master.New(listen, token).Run()
+	if opts.PanelUser == "" {
+		if st, err := config.LoadMaster(); err == nil {
+			opts.PanelUser = st.PanelUser
+			if opts.PanelPass == "" {
+				opts.PanelPass = st.PanelPassword
+			}
+		}
+	}
+
+	srv, err := master.New(opts)
+	if err != nil {
+		return err
+	}
+	// persist credentials/token
+	st, _ := config.LoadMasterOrEmpty()
+	st.Token = srv.Token
+	st.PanelUser = srv.PanelUser
+	st.PanelPassword = srv.PanelPass
+	st.Entrance = srv.Entrance
+	st.PublicHost = srv.PublicHost
+	_ = config.SaveMaster(st)
+
+	return srv.Run()
 }
 
 func runAgent(args []string) error {
@@ -76,6 +144,7 @@ func runAgent(args []string) error {
 		if err != nil {
 			return fmt.Errorf("load config: %w (run agent register first)", err)
 		}
+		agent.AutofillPanel(cfg)
 		return agent.Run(cfg)
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
@@ -83,7 +152,7 @@ func runAgent(args []string) error {
 }
 
 func runAgentSet(args []string) error {
-	var panelURL, panelKey string
+	var panelURL, panelKey, panelUser, panelPass, entrance string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--panel-url":
@@ -98,14 +167,32 @@ func runAgentSet(args []string) error {
 				return fmt.Errorf("--panel-key needs a value")
 			}
 			panelKey = args[i]
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			panelUser = args[i]
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			panelPass = args[i]
+		case "--entrance":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--entrance needs a value")
+			}
+			entrance = args[i]
 		default:
 			return fmt.Errorf("unknown set flag: %s", args[i])
 		}
 	}
-	if panelURL == "" && panelKey == "" {
-		return fmt.Errorf("usage: agent set --panel-url URL --panel-key KEY")
+	if panelURL == "" && panelKey == "" && panelUser == "" && panelPass == "" && entrance == "" {
+		return fmt.Errorf("usage: agent set --panel-url URL [--panel-user U --panel-pass P --entrance E]")
 	}
-	if err := agent.SetPanel(panelURL, panelKey); err != nil {
+	if err := agent.SetPanel(panelURL, panelKey, panelUser, panelPass, entrance); err != nil {
 		return err
 	}
 	path, _ := config.Path()
@@ -113,14 +200,26 @@ func runAgentSet(args []string) error {
 	return nil
 }
 
+func randomToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func usage() {
-	fmt.Fprintf(os.Stderr, `1panel-agent — multi-node 1Panel tunnel
+	fmt.Fprintf(os.Stderr, `1pm — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  1panel-agent master --listen :8080 --token SECRET
-  1panel-agent agent register host:port/token
-  1panel-agent agent set --panel-url http://127.0.0.1:20560 --panel-key KEY
-  1panel-agent agent run
+  1pm master --host 10.211.55.14 --token SECRET --panel-user USER --panel-pass PASS
+      # default: takeover local 1Panel port, reverse-proxy local panel, UI at /__mp/
+
+  1pm agent register host:port/token
+  1pm agent set --panel-url http://127.0.0.1:52045 --panel-user U --panel-pass P
+  1pm agent run
+
+Master UI: http://<master>:<panel-port>/__mp/
 `)
 }
 

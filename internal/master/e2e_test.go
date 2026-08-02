@@ -37,7 +37,16 @@ func TestTunnelProxy(t *testing.T) {
 	_ = ln.Close()
 
 	token := "test-token"
-	srv := master.New(masterAddr, token)
+	srv, err := master.New(master.Options{
+		Listen:     masterAddr,
+		Token:      token,
+		Takeover:   false,
+		LocalPanel: "",
+		PublicHost: "127.0.0.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	go func() {
 		if err := srv.Run(); err != nil && err != http.ErrServerClosed {
 			t.Logf("master exit: %v", err)
@@ -70,7 +79,7 @@ func TestTunnelProxy(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	var listBody string
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + masterAddr + "/")
+		resp, err := http.Get("http://" + masterAddr + "/__mp/")
 		if err == nil {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()

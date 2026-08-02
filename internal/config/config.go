@@ -16,11 +16,14 @@ const (
 )
 
 type Agent struct {
-	ID       string `json:"id"`
-	Master   string `json:"master"` // host:port
-	Token    string `json:"token"`
-	PanelURL string `json:"panel_url"`
-	PanelKey string `json:"panel_key"`
+	ID            string `json:"id"`
+	Master        string `json:"master"` // host:port
+	Token         string `json:"token"`
+	PanelURL      string `json:"panel_url"`
+	PanelKey      string `json:"panel_key"`
+	PanelUser     string `json:"panel_user"`
+	PanelPassword string `json:"panel_password"`
+	PanelEntrance string `json:"panel_entrance"`
 }
 
 func Dir() (string, error) {

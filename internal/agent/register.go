@@ -39,24 +39,11 @@ func RegisterAndRun(target string) error {
 	if err != nil {
 		return err
 	}
+	AutofillPanel(cfg)
 	cfg.Master = master
 	cfg.Token = token
 	if err := config.Save(cfg); err != nil {
 		return err
 	}
 	return Run(cfg)
-}
-
-func SetPanel(panelURL, panelKey string) error {
-	cfg, err := config.LoadOrEmpty()
-	if err != nil {
-		return err
-	}
-	if panelURL != "" {
-		cfg.PanelURL = panelURL
-	}
-	if panelKey != "" {
-		cfg.PanelKey = panelKey
-	}
-	return config.Save(cfg)
 }

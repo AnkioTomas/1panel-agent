@@ -47,6 +47,7 @@ func (c *Client) connectOnce() error {
 	if c.Cfg.Master == "" || c.Cfg.Token == "" {
 		return fmt.Errorf("master/token not configured; run agent register first")
 	}
+	AutofillPanel(c.Cfg)
 	if c.Cfg.PanelURL == "" {
 		c.Cfg.PanelURL = config.DefaultPanelURL
 	}

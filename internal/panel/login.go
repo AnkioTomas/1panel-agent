@@ -52,17 +52,17 @@ func LoginWithClient(client *http.Client, panelBase, entrance, username, passwor
 		return http.ErrUseLastResponse
 	}
 
+	// Fetch auth setting first — this sets panel_public_key cookie.
+	settingReq, err := http.NewRequest(http.MethodGet, base+"/api/v2/core/auth/setting", nil)
+	if err != nil {
+		return nil, err
+	}
 	if entrance != "" {
-		req, err := http.NewRequest(http.MethodGet, base+"/"+strings.TrimPrefix(entrance, "/"), nil)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := c.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
+		settingReq.Header.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(entrance)))
+	}
+	if settingResp, err := c.Do(settingReq); err == nil {
+		_, _ = io.Copy(io.Discard, settingResp.Body)
+		_ = settingResp.Body.Close()
 	}
 
 	if publicKeyPEM == "" {

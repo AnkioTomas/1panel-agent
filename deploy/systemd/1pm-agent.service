@@ -1,0 +1,16 @@
+[Unit]
+Description=1Panel multi-node agent tunnel
+After=network-online.target 1panel-core.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+ExecStartPre=/usr/local/bin/1pm agent set --panel-url http://127.0.0.1:52045 --panel-user ankio --panel-pass ankio@2026.8 --entrance tomas
+ExecStart=/usr/local/bin/1pm agent register 10.211.55.14:52045/mp-tunnel-secret
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

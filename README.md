@@ -1,116 +1,96 @@
-# 1panel-agent
+# 1pm — 1Panel 多机网关
 
-1Panel 多机管理补充：Master 统一入口 + Agent 内网穿透，在浏览器里切换访问各节点上的 1Panel。
+Master 接管本机 1Panel 端口做统一入口；Agent 经 WebSocket 隧道接入（类 FRP）。浏览器可在 Master 上查看在线节点、复制注册命令，并一键切换到子节点面板（自动账号密码登录）。
 
-Agent 主动用 WebSocket 连到 Master（Token 认证），之上用 smux 做流复用，效果类似 FRP：节点可在 NAT/内网后，无需对面板端口做公网暴露。
+> 安装名用 `1pm`，避免与官方 `/usr/bin/1panel-agent` 冲突。
 
 ## 架构
 
 ```text
-Browser ──HTTP──▶ Master ──smux/WS──▶ Agent ──HTTP/WS──▶ 本机 1Panel
-                     ▲
-                     │ WebSocket + Token
-                   Agent 主动接入
-```
+Browser ──▶ Master(:面板端口)
+              │
+              ├─ /__mp/          节点管理 UI
+              ├─ mp_node cookie  选中远程节点时，根路径隧道反代 Agent 本机 1Panel
+              └─ 默认            反代本机 1Panel（takeover 后监听在 127.0.0.1:内部端口）
 
-| 组件 | 职责 |
-|------|------|
-| Master | 接受 Agent 接入；节点列表；`/n/{id}/` 反代到对应 Agent |
-| Agent | 注册到 Master；把隧道请求转到本机 1Panel；可注入 API Key |
+Agent ──WebSocket+Token──▶ Master
+```
 
 ## 构建
 
-需要 Go 1.23+。
+```bash
+go build -o bin/1pm ./cmd/1panel-agent
+# 交叉编译到 Linux ARM64：
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/1pm ./cmd/1panel-agent
+```
+
+## Master（需 root）
+
+自动读取 `/opt/1panel/db/core.db`：把本机 1Panel 挪到内部端口，Master 监听原端口并反代。
 
 ```bash
-go build -o bin/1panel-agent ./cmd/1panel-agent
+sudo ./bin/1pm master \
+  --host 10.211.55.14 \
+  --token mp-tunnel-secret \
+  --panel-user ankio \
+  --panel-pass 'your-password'
 ```
+
+| 参数 | 说明 |
+|------|------|
+| `--host` | 给 Agent 复制注册命令用的对外 IP |
+| `--token` | Agent 接入密钥（可省略，自动生成并落盘） |
+| `--panel-user/pass` | 切换子节点时预登录用的 1Panel 账号 |
+| `--no-takeover` | 不挪动本机 1Panel（需自行 `--listen` / `--upstream`） |
+
+管理页：`http://<master>:<原面板端口>/__mp/`
+
+状态文件：`/var/lib/1pm/master.json`
+
+systemd 示例：[`deploy/systemd/1pm-master.service`](deploy/systemd/1pm-master.service)
+
+## Agent
+
+```bash
+# 可选：显式指定本机面板（默认会读 core.db）
+sudo 1pm agent set --panel-url http://127.0.0.1:52045 --entrance tomas
+
+# 注册并前台运行（命令可在 Master UI 一键复制）
+sudo 1pm agent register 10.211.55.14:52045/mp-tunnel-secret
+```
+
+systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)
 
 ## 使用
 
-### 1. 启动 Master
+1. 打开 `http://master:端口/__mp/`
+2. 复制「子节点注册命令」到 Agent 机器执行
+3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点 1Panel，并设置 `mp_node` cookie，之后根路径流量都走该 Agent
+4. 点「切换回本机 1Panel」清除远程节点选择
 
-```bash
-./bin/1panel-agent master --listen :8080 --token YOUR_SECRET
-```
+## 实验室验证（已通过）
 
-浏览器打开 `http://<master>:8080/` 可看到在线节点。
+| 机器 | IP | 角色 |
+|------|-----|------|
+| ubuntu | 10.211.55.14 | Master + 本机 1Panel |
+| ubuntu | 10.211.55.15 | Agent + 本机 1Panel |
 
-### 2. 配置 Agent 本机 1Panel
+验证结果：
 
-在每台装有 1Panel 的机器上：
+- Master takeover：`1pm` 监听 `52045`，本机 1Panel 迁到 `62045`
+- Agent 在线出现在 `/__mp/`
+- `/__mp/go/{id}` 预登录成功（`psession`），隧道访问 `/api/v2/dashboard/base/os` 返回子机系统信息
+- `/assets/js/...` 经 `mp_node` 根路径隧道可拉取（约 270KB）
 
-```bash
-./bin/1panel-agent agent set \
-  --panel-url http://127.0.0.1:20560 \
-  --panel-key YOUR_1PANEL_API_KEY
-```
-
-- `--panel-url`：本机面板地址（默认 `http://127.0.0.1:20560`）
-- `--panel-key`：1Panel「设置 → 面板」中的 API 接口密钥；有配置时，Agent 会自动补 `1Panel-Token` / `1Panel-Timestamp`
-
-配置文件：`~/.1panel-agent/agent.json`（含稳定 `id`，重连不换）。
-
-### 3. 注册并运行 Agent
-
-```bash
-./bin/1panel-agent agent register <master_ip>:<port>/<token>
-# 例：
-./bin/1panel-agent agent register 1.2.3.4:8080/YOUR_SECRET
-```
-
-`register` 会写入 Master 地址与 Token，并前台保持连接（可用 systemd 托管）。已注册过可直接：
-
-```bash
-./bin/1panel-agent agent run
-```
-
-### 4. 切换节点
-
-打开 Master 首页 → 点击节点，或直接访问：
-
-```text
-http://<master>:8080/n/<agent_id>/
-```
-
-流量路径：浏览器 → Master → 隧道 → Agent → 本机 1Panel。
-
-## CLI 一览
-
-```text
-1panel-agent master --listen :8080 --token SECRET
-1panel-agent agent register host:port/token
-1panel-agent agent set --panel-url URL --panel-key KEY
-1panel-agent agent run
-```
-
-## Docker 联调
-
-仓库自带假 1Panel + Master + Agent 编排，用于验证隧道：
-
-```bash
-./deploy/docker/test.sh
-```
-
-或手动：
-
-```bash
-cd deploy/docker
-docker compose up -d --build
-# Master: http://127.0.0.1:18080/
-docker compose down -v
-```
-
-## 说明与限制
-
-- 单二进制，无数据库；在线节点表在 Master 内存中，重启后等 Agent 重连。
-- 反代使用路径前缀 `/n/{id}/`，会改写 `Location` 与 `Set-Cookie` 的 `Path`。若 1Panel 前端写死绝对路径，个别资源可能异常；届时可改为「Cookie 选节点 + 根路径反代」。
-- 只做 1Panel 的 HTTP/WebSocket 穿透，不是通用端口映射工具。
-- Master Token 仅用于 Agent 接入认证，请使用足够长的随机串，并限制 Master 端口暴露面。
-
-## 开发
+## 开发测试
 
 ```bash
 go test ./...
 ./deploy/docker/test.sh
 ```
+
+## 说明
+
+- 切换远程节点使用 **Cookie 选节点 + 根路径反代**，避免 1Panel 前端绝对路径 `/assets` 在前缀模式下失效。
+- 登录密码按 1Panel v2 前端逻辑做 RSA+AES 混合加密。
+- Takeover 会改 `ServerPort` 并 `systemctl restart 1panel-core`；卸载时需把端口改回或恢复 `master.json` 中的 `original_port`。
