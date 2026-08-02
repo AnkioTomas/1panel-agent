@@ -212,9 +212,15 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	if host, _, err := net.SplitHostPort(remoteIP); err == nil {
 		remoteIP = host
 	}
-	info := AgentInfo{ID: reg.ID, Hostname: reg.Hostname, PanelURL: reg.PanelURL, RemoteIP: remoteIP}
+	info := AgentInfo{
+		ID:           reg.ID,
+		Hostname:     reg.Hostname,
+		PanelURL:     reg.PanelURL,
+		RemoteIP:     remoteIP,
+		PanelVersion: reg.PanelVersion,
+	}
 	s.reg.Put(&Session{Info: info, Mux: session})
-	log.Printf("agent online: %s (%s) from %s", info.Hostname, info.ID, remoteIP)
+	log.Printf("agent online: %s (%s) from %s version=%s", info.Hostname, info.ID, remoteIP, info.PanelVersion)
 
 	<-session.CloseChan()
 	s.reg.Remove(info.ID, session)

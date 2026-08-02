@@ -7,10 +7,11 @@ import (
 )
 
 type AgentInfo struct {
-	ID       string
-	Hostname string
-	PanelURL string
-	RemoteIP string
+	ID           string
+	Hostname     string
+	PanelURL     string
+	RemoteIP     string
+	PanelVersion string
 }
 
 type Session struct {

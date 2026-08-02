@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+
+	"1panel-agent/internal/panel"
 )
 
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
@@ -18,13 +20,17 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if path == "/api/agents" {
+	if path == "/api/agents" || path == "/api/upgrade-check" {
 		if !s.validAuthCookie(r) && !s.localPanelLoggedIn(r) {
 			s.denyAPI(w, "unauthorized")
 			return
 		}
 		if !s.validAuthCookie(r) {
 			s.issueAuthCookie(w)
+		}
+		if path == "/api/upgrade-check" {
+			s.handleUpgradeCheck(w, r)
+			return
 		}
 		s.apiAgents(w, r)
 		return
@@ -50,21 +56,23 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 	type item struct {
-		ID       string `json:"id"`
-		Hostname string `json:"hostname"`
-		PanelURL string `json:"panel_url"`
-		RemoteIP string `json:"remote_ip"`
-		OpenURL  string `json:"open_url"`
+		ID           string `json:"id"`
+		Hostname     string `json:"hostname"`
+		PanelURL     string `json:"panel_url"`
+		RemoteIP     string `json:"remote_ip"`
+		PanelVersion string `json:"panel_version"`
+		OpenURL      string `json:"open_url"`
 	}
 	list := s.reg.List()
 	out := make([]item, 0, len(list))
 	for _, a := range list {
 		out = append(out, item{
-			ID:       a.ID,
-			Hostname: a.Hostname,
-			PanelURL: a.PanelURL,
-			RemoteIP: a.RemoteIP,
-			OpenURL:  "/__mp/go/" + a.ID,
+			ID:           a.ID,
+			Hostname:     a.Hostname,
+			PanelURL:     a.PanelURL,
+			RemoteIP:     a.RemoteIP,
+			PanelVersion: a.PanelVersion,
+			OpenURL:      "/__mp/go/" + a.ID,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -72,28 +80,30 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 type pageData struct {
-	Agents     []AgentInfo
-	Register   string
-	Token      string
-	Host       string
-	DeviceIP   string
-	Entrance   string
-	LocalPanel string
-	Online     int
+	Agents        []AgentInfo
+	Register      string
+	Token         string
+	Host          string
+	DeviceIP      string
+	Entrance      string
+	LocalPanel    string
+	MasterVersion string
+	Online        int
 }
 
 func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	host := s.AdvertiseHost(r)
 	agents := s.reg.List()
 	data := pageData{
-		Agents:     agents,
-		Register:   "1pm agent register " + host + "/" + s.Token,
-		Token:      s.Token,
-		Host:       host,
-		DeviceIP:   s.DeviceIP(),
-		Entrance:   s.Entrance,
-		LocalPanel: s.LocalPanel,
-		Online:     len(agents),
+		Agents:        agents,
+		Register:      "1pm agent register " + host + "/" + s.Token,
+		Token:         s.Token,
+		Host:          host,
+		DeviceIP:      s.DeviceIP(),
+		Entrance:      s.Entrance,
+		LocalPanel:    s.LocalPanel,
+		MasterVersion: panel.ReadSystemVersion(""),
+		Online:        len(agents),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = nodesTmpl.Execute(w, data)
@@ -252,20 +262,33 @@ tr:last-child td{border-bottom:0}
   <div class="card">
     <div class="card-hd">
       <h2>在线节点</h2>
-      <button class="btn plain" type="button" onclick="location.reload()">刷新</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn plain" type="button" id="btnCheckUpgrade" onclick="checkUpgrade()">检查更新</button>
+        <button class="btn plain" type="button" onclick="location.reload()">刷新</button>
+      </div>
     </div>
     <div class="card-bd" style="padding:0">
       {{if .Agents}}
       <table>
         <thead>
-          <tr><th style="padding-left:18px">状态</th><th>主机名</th><th>IP</th><th>节点 ID</th><th style="width:120px"></th></tr>
+          <tr>
+            <th style="padding-left:18px">状态</th>
+            <th>主机名</th>
+            <th>IP</th>
+            <th>版本</th>
+            <th>更新</th>
+            <th>节点 ID</th>
+            <th style="width:120px"></th>
+          </tr>
         </thead>
         <tbody>
         {{range .Agents}}
-          <tr>
+          <tr data-agent-id="{{.ID}}">
             <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
             <td>{{.Hostname}}</td>
             <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
+            <td class="col-ver">{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
+            <td class="col-upd" style="color:var(--text-secondary)">-</td>
             <td><code style="font-size:12px;color:var(--text-regular)">{{.ID}}</code></td>
             <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
           </tr>
@@ -275,15 +298,21 @@ tr:last-child td{border-bottom:0}
       {{else}}
       <p class="empty">暂无在线 Agent，请先在子节点执行上方注册命令</p>
       {{end}}
+      <p class="meta" id="upgradeMsg" style="padding:12px 18px;margin:0;display:none"></p>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-hd"><h2>本机面板</h2></div>
+    <div class="card-hd"><h2>主节点面板</h2></div>
     <div class="card-bd">
-      <p class="meta" style="margin:0 0 14px">上游 {{.LocalPanel}}。切换远程节点不会覆盖本机登录态。</p>
+      <p class="meta" style="margin:0 0 14px">
+        上游 {{.LocalPanel}}
+        · 版本 <strong id="masterVer">{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
+        · 更新 <strong id="masterUpd" style="font-weight:500;color:var(--text-secondary)">-</strong>
+      </p>
+      <p class="meta" style="margin:0 0 14px">切换远程节点不会覆盖主节点登录态。</p>
       <div class="actions">
-        <a class="btn primary-panel" href="/__mp/local">切换回本机 1Panel</a>
+        <a class="btn primary-panel" href="/__mp/local">切换回主节点 1Panel</a>
         {{if .Entrance}}<a class="btn plain" href="/{{.Entrance}}">打开安全入口</a>{{end}}
         <a class="btn plain" href="/__mp/">刷新本页</a>
       </div>
@@ -299,6 +328,48 @@ function copyReg(){
     const el=document.getElementById('toast');
     el.classList.add('show');
     setTimeout(()=>el.classList.remove('show'),1200);
+  });
+}
+function updText(status, latest){
+  if(status==='outdated') return '有更新 '+(latest||'');
+  if(status==='latest') return '已是最新';
+  return '-';
+}
+function checkUpgrade(){
+  const btn=document.getElementById('btnCheckUpgrade');
+  const msg=document.getElementById('upgradeMsg');
+  btn.disabled=true; btn.textContent='检查中…';
+  fetch('/__mp/api/upgrade-check',{credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(data=>{
+    const mv=document.getElementById('masterVer');
+    const mu=document.getElementById('masterUpd');
+    if(data.master_version && mv) mv.textContent=data.master_version;
+    if(mu){
+      mu.textContent=updText(data.master_status, data.latest);
+      mu.style.color=data.master_status==='outdated'?'#e6a23c':(data.master_status==='latest'?'#67c23a':'');
+    }
+    (data.agents||[]).forEach(a=>{
+      const tr=document.querySelector('tr[data-agent-id="'+a.id+'"]');
+      if(!tr) return;
+      const ver=tr.querySelector('.col-ver');
+      const upd=tr.querySelector('.col-upd');
+      if(ver && a.version) ver.textContent=a.version;
+      if(upd){
+        upd.textContent=updText(a.status, a.latest||data.latest);
+        upd.style.color=a.status==='outdated'?'#e6a23c':(a.status==='latest'?'#67c23a':'');
+      }
+    });
+    if(msg){
+      if(data.message){ msg.style.display='block'; msg.textContent='检查备注：'+data.message; }
+      else if(data.latest){ msg.style.display='block'; msg.textContent='可用版本：'+data.latest; }
+      else { msg.style.display='block'; msg.textContent='未发现可用新版本'; }
+    }
+  }).catch(e=>{
+    if(msg){ msg.style.display='block'; msg.textContent='检查失败：'+e.message; }
+  }).finally(()=>{
+    btn.disabled=false; btn.textContent='检查更新';
   });
 }
 </script>

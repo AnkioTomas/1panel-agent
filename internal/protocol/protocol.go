@@ -17,9 +17,10 @@ const (
 
 // Register is the first JSON message Agent sends after WebSocket upgrade.
 type Register struct {
-	ID       string `json:"id"`
-	Hostname string `json:"hostname"`
-	PanelURL string `json:"panel_url"`
+	ID           string `json:"id"`
+	Hostname     string `json:"hostname"`
+	PanelURL     string `json:"panel_url"`
+	PanelVersion string `json:"panel_version,omitempty"`
 }
 
 // RegisterOK is Master's acknowledgment before smux takes over.

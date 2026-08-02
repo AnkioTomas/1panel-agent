@@ -80,9 +80,10 @@ func (c *Client) connectOnce() error {
 		hostname = c.Cfg.ID
 	}
 	reg := protocol.Register{
-		ID:       c.Cfg.ID,
-		Hostname: hostname,
-		PanelURL: c.Cfg.PanelURL,
+		ID:           c.Cfg.ID,
+		Hostname:     hostname,
+		PanelURL:     c.Cfg.PanelURL,
+		PanelVersion: panel.ReadSystemVersion(""),
 	}
 	if err := protocol.WriteJSON(netConn, reg); err != nil {
 		return fmt.Errorf("register write: %w", err)
