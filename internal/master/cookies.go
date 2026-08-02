@@ -24,17 +24,6 @@ func isPanelCookie(name string) bool {
 	return false
 }
 
-func remoteCookieName(name string) string {
-	return remoteCookiePrefix + name
-}
-
-func localCookieName(remoteName string) (string, bool) {
-	if !strings.HasPrefix(remoteName, remoteCookiePrefix) {
-		return "", false
-	}
-	return strings.TrimPrefix(remoteName, remoteCookiePrefix), true
-}
-
 // cookieHeaderForRemote builds Cookie header for the agent panel:
 // map mp_r_* -> real names; drop local panel session cookies.
 func cookieHeaderForRemote(r *http.Request) string {
@@ -44,11 +33,10 @@ func cookieHeaderForRemote(r *http.Request) string {
 			continue
 		}
 		if isPanelCookie(c.Name) {
-			// local session — do not send to remote
 			continue
 		}
-		if real, ok := localCookieName(c.Name); ok {
-			parts = append(parts, real+"="+c.Value)
+		if strings.HasPrefix(c.Name, remoteCookiePrefix) {
+			parts = append(parts, strings.TrimPrefix(c.Name, remoteCookiePrefix)+"="+c.Value)
 			continue
 		}
 		parts = append(parts, c.Name+"="+c.Value)
@@ -68,7 +56,6 @@ func applyRemoteRequestCookies(headers map[string][]string, r *http.Request) {
 func rewriteSetCookieToRemoteNamespace(headers map[string][]string) {
 	vals, ok := headers["Set-Cookie"]
 	if !ok {
-		// case-insensitive pick
 		for k, v := range headers {
 			if strings.EqualFold(k, "Set-Cookie") {
 				vals = v
@@ -85,12 +72,12 @@ func rewriteSetCookieToRemoteNamespace(headers map[string][]string) {
 	}
 	out := make([]string, 0, len(vals))
 	for _, v := range vals {
-		out = append(out, renameSetCookie(v, true))
+		out = append(out, renameSetCookieToRemote(v))
 	}
 	headers["Set-Cookie"] = out
 }
 
-func renameSetCookie(setCookie string, toRemote bool) string {
+func renameSetCookieToRemote(setCookie string) string {
 	parts := strings.Split(setCookie, ";")
 	if len(parts) == 0 {
 		return setCookie
@@ -100,38 +87,17 @@ func renameSetCookie(setCookie string, toRemote bool) string {
 	if !found {
 		return setCookie
 	}
-	if toRemote {
-		if isPanelCookie(name) {
-			name = remoteCookieName(name)
-		}
-	} else {
-		if real, ok := localCookieName(name); ok {
-			name = real
-		}
+	if isPanelCookie(name) {
+		name = remoteCookiePrefix + name
 	}
 	parts[0] = name + "=" + value
-	// normalize Path to /
 	for i := 1; i < len(parts); i++ {
 		trim := strings.TrimSpace(parts[i])
 		if len(trim) >= 5 && strings.EqualFold(trim[:5], "Path=") {
 			parts[i] = " Path=/"
-		} else if i > 0 {
+		} else {
 			parts[i] = " " + trim
 		}
 	}
 	return strings.Join(parts, ";")
-}
-
-func setRemotePanelCookie(w http.ResponseWriter, name, value string, httpOnly bool) {
-	if isPanelCookie(name) {
-		name = remoteCookieName(name)
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: httpOnly,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-	})
 }

@@ -3,7 +3,6 @@ package panel
 import (
 	"database/sql"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"regexp"
@@ -16,11 +15,9 @@ import (
 const DefaultCoreDB = "/opt/1panel/db/core.db"
 
 type Settings struct {
-	ServerPort        int
-	SecurityEntrance  string
-	UserName          string
-	PasswordPublicKey string
-	SystemVersion     string
+	ServerPort       int
+	SecurityEntrance string
+	SystemVersion    string
 }
 
 func ReadSettings(dbPath string) (*Settings, error) {
@@ -37,7 +34,7 @@ func ReadSettings(dbPath string) (*Settings, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`SELECT key, value FROM settings WHERE key IN (
-		'ServerPort','SecurityEntrance','UserName','PASSWORD_PUBLIC_KEY','SystemVersion')`)
+		'ServerPort','SecurityEntrance','SystemVersion')`)
 	if err != nil {
 		return nil, err
 	}
@@ -56,11 +53,9 @@ func ReadSettings(dbPath string) (*Settings, error) {
 		return nil, fmt.Errorf("ServerPort missing in %s", dbPath)
 	}
 	return &Settings{
-		ServerPort:        port,
-		SecurityEntrance:  m["SecurityEntrance"],
-		UserName:          m["UserName"],
-		PasswordPublicKey: m["PASSWORD_PUBLIC_KEY"],
-		SystemVersion:     m["SystemVersion"],
+		ServerPort:       port,
+		SecurityEntrance: m["SecurityEntrance"],
+		SystemVersion:    m["SystemVersion"],
 	}, nil
 }
 
@@ -111,13 +106,4 @@ func InternalPort(publicPort int) int {
 		p = 152045
 	}
 	return p
-}
-
-func WaitListen(addr string) error {
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	_ = ln.Close()
-	return nil
 }

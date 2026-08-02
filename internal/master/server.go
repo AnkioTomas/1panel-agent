@@ -133,8 +133,8 @@ func New(opts Options) (*Server, error) {
 		}
 		s.wrapLocalProxy()
 	}
-	if err := panel.InjectSidebarMenu(opts.DBPath); err != nil {
-		log.Printf("warn: inject sidebar menu: %v", err)
+	if err := panel.RemoveStaleSidebarMenu(opts.DBPath); err != nil {
+		log.Printf("warn: clean sidebar menu: %v", err)
 	}
 	return s, nil
 }
@@ -145,7 +145,6 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/agent.sh", s.handleAgentScript)
 	mux.HandleFunc("/agent.bin", s.handleAgentBinary)
 	mux.HandleFunc("/__mp/", s.handleMP)
-	mux.HandleFunc("/n/", s.handleProxy)
 	mux.HandleFunc("/", s.handleRoot)
 
 	srv := &http.Server{
@@ -170,10 +169,10 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 				targetPath += "?" + r.URL.RawQuery
 			}
 			if isWebSocket(r) {
-				s.proxyWebSocket(w, r, sess, targetPath, "")
+				s.proxyWebSocket(w, r, sess, targetPath)
 				return
 			}
-			s.proxyHTTP(w, r, sess, targetPath, "")
+			s.proxyHTTP(w, r, sess, targetPath)
 			return
 		}
 	}
@@ -254,45 +253,11 @@ func smuxConfig() *smux.Config {
 	return cfg
 }
 
-func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/n/")
-	if rest == "" {
-		http.Error(w, "missing agent id", http.StatusBadRequest)
-		return
-	}
-	id, path, found := strings.Cut(rest, "/")
-	if id == "" {
-		http.Error(w, "missing agent id", http.StatusBadRequest)
-		return
-	}
-	if !found {
-		http.Redirect(w, r, "/n/"+id+"/", http.StatusFound)
-		return
-	}
-	prefix := "/n/" + id
-	targetPath := "/" + path
-	if r.URL.RawQuery != "" {
-		targetPath += "?" + r.URL.RawQuery
-	}
-
-	sess, ok := s.reg.Get(id)
-	if !ok {
-		http.Error(w, "agent offline", http.StatusBadGateway)
-		return
-	}
-
-	if isWebSocket(r) {
-		s.proxyWebSocket(w, r, sess, targetPath, prefix)
-		return
-	}
-	s.proxyHTTP(w, r, sess, targetPath, prefix)
-}
-
 func isWebSocket(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
-func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath, prefix string) {
+func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
 		http.Error(w, "tunnel open failed: "+err.Error(), http.StatusBadGateway)
@@ -309,10 +274,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 			delete(headers, k)
 		}
 	}
-	if prefix == "" {
-		// Root-path remote node: keep local psession intact, use mp_r_* for agent.
-		applyRemoteRequestCookies(headers, r)
-	}
+	// Keep local psession intact; use mp_r_* cookies for the agent panel.
+	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeHTTP,
 		Method:  r.Method,
@@ -334,8 +297,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 		return
 	}
 
-	respMeta, err := protocol.ReadResponseMeta(stream)
-	if err != nil {
+	respMeta := &protocol.ResponseMeta{}
+	if err := protocol.ReadJSON(stream, respMeta); err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -352,16 +315,12 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 			break
 		}
 	}
-	// Decode before rewrite; strip hop headers so browser gets the bytes we write.
 	respBody = maybeGunzip(respBody, respMeta.Headers)
 	dropHopHeaders(respMeta.Headers)
-	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
-		// Always show Master advertise IP as「本机」; agent IP comes from /__mp/api/agents.
+	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
 		respBody = s.injectHookHTML(respBody, s.DeviceIP())
 	}
-	if prefix == "" {
-		rewriteSetCookieToRemoteNamespace(respMeta.Headers)
-	}
+	rewriteSetCookieToRemoteNamespace(respMeta.Headers)
 
 	h := w.Header()
 	for k, vals := range respMeta.Headers {
@@ -370,7 +329,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 			continue
 		}
 		for _, v := range vals {
-			h.Add(k, rewriteHeaderValue(k, v, prefix))
+			h.Add(k, v)
 		}
 	}
 	h.Set("Content-Length", fmt.Sprintf("%d", len(respBody)))
@@ -378,65 +337,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	_, _ = w.Write(respBody)
 }
 
-func rewriteHeaderValue(key, value, prefix string) string {
-	switch http.CanonicalHeaderKey(key) {
-	case "Location":
-		return rewriteLocation(value, prefix)
-	case "Set-Cookie":
-		return rewriteSetCookie(value, prefix)
-	default:
-		return value
-	}
-}
-
-func rewriteLocation(loc, prefix string) string {
-	if prefix == "" {
-		return loc
-	}
-	u, err := url.Parse(loc)
-	if err != nil {
-		return loc
-	}
-	if u.IsAbs() {
-		u.Scheme = ""
-		u.Host = ""
-		rel := u.String()
-		if rel == "" {
-			rel = "/"
-		}
-		if !strings.HasPrefix(rel, "/") {
-			rel = "/" + rel
-		}
-		return prefix + rel
-	}
-	if strings.HasPrefix(loc, "/") {
-		return prefix + loc
-	}
-	return loc
-}
-
-func rewriteSetCookie(v, prefix string) string {
-	if prefix == "" {
-		return v
-	}
-	parts := strings.Split(v, ";")
-	for i, p := range parts {
-		trim := strings.TrimSpace(p)
-		if len(trim) >= 5 && strings.EqualFold(trim[:5], "Path=") {
-			path := trim[5:]
-			if path == "" || path == "/" {
-				parts[i] = " Path=" + prefix + "/"
-			} else if strings.HasPrefix(path, "/") {
-				parts[i] = " Path=" + prefix + path
-			}
-		} else if i > 0 {
-			parts[i] = " " + trim
-		}
-	}
-	return strings.Join(parts, ";")
-}
-
-func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Session, targetPath, prefix string) {
+func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
 		http.Error(w, "tunnel open failed: "+err.Error(), http.StatusBadGateway)
@@ -446,9 +347,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
-	if prefix == "" {
-		applyRemoteRequestCookies(headers, r)
-	}
+	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeWS,
 		Method:  http.MethodGet,
@@ -464,14 +363,12 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		return
 	}
 
-	respMeta, err := protocol.ReadResponseMeta(stream)
-	if err != nil {
+	respMeta := &protocol.ResponseMeta{}
+	if err := protocol.ReadJSON(stream, respMeta); err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	if prefix == "" {
-		rewriteSetCookieToRemoteNamespace(respMeta.Headers)
-	}
+	rewriteSetCookieToRemoteNamespace(respMeta.Headers)
 	if respMeta.Status != http.StatusSwitchingProtocols {
 		h := w.Header()
 		for k, vals := range respMeta.Headers {
@@ -480,7 +377,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 				continue
 			}
 			for _, v := range vals {
-				h.Add(k, rewriteHeaderValue(k, v, prefix))
+				h.Add(k, v)
 			}
 		}
 		w.WriteHeader(respMeta.Status)

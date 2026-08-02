@@ -163,7 +163,7 @@ func runAgent(args []string) error {
 }
 
 func runAgentSet(args []string) error {
-	var panelURL, panelKey, panelUser, panelPass, entrance string
+	var panelURL, panelKey string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--panel-url":
@@ -178,32 +178,14 @@ func runAgentSet(args []string) error {
 				return fmt.Errorf("--panel-key needs a value")
 			}
 			panelKey = args[i]
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			panelUser = args[i]
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			panelPass = args[i]
-		case "--entrance":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--entrance needs a value")
-			}
-			entrance = args[i]
 		default:
 			return fmt.Errorf("unknown set flag: %s", args[i])
 		}
 	}
-	if panelURL == "" && panelKey == "" && panelUser == "" && panelPass == "" && entrance == "" {
-		return fmt.Errorf("usage: agent set --panel-url URL [--panel-user U --panel-pass P --entrance E]")
+	if panelURL == "" && panelKey == "" {
+		return fmt.Errorf("usage: agent set --panel-url URL [--panel-key KEY]")
 	}
-	if err := agent.SetPanel(panelURL, panelKey, panelUser, panelPass, entrance); err != nil {
+	if err := agent.SetPanel(panelURL, panelKey); err != nil {
 		return err
 	}
 	path, _ := config.Path()

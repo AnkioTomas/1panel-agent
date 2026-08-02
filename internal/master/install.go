@@ -9,21 +9,13 @@ import (
 	"text/template"
 )
 
-func (s *Server) requireInstallToken(w http.ResponseWriter, r *http.Request) bool {
-	tok := r.URL.Query().Get("token")
-	if !s.tokenOK(tok) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	return true
-}
-
 func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.requireInstallToken(w, r) {
+	if !s.tokenOK(r.URL.Query().Get("token")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	host := s.AdvertiseHost(r)
@@ -54,7 +46,8 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.requireInstallToken(w, r) {
+	if !s.tokenOK(r.URL.Query().Get("token")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	exe, err := os.Executable()

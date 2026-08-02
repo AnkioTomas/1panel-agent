@@ -96,18 +96,6 @@ func ReadRequestMeta(r io.Reader) (*RequestMeta, error) {
 	return meta, nil
 }
 
-func WriteResponseMeta(w io.Writer, meta *ResponseMeta) error {
-	return WriteJSON(w, meta)
-}
-
-func ReadResponseMeta(r io.Reader) (*ResponseMeta, error) {
-	meta := &ResponseMeta{}
-	if err := ReadJSON(r, meta); err != nil {
-		return nil, err
-	}
-	return meta, nil
-}
-
 // CopyChunks writes r to w as length-prefixed chunks, ending with a zero chunk.
 func CopyChunks(w io.Writer, r io.Reader) error {
 	buf := make([]byte, 32*1024)

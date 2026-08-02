@@ -19,15 +19,11 @@ const (
 	authSkew   = 5 * time.Minute
 )
 
-func (s *Server) authSecret() string {
-	// Token doubles as HMAC secret; never expose raw in UI.
-	return s.currentToken()
-}
-
 func (s *Server) issueAuthCookie(w http.ResponseWriter) {
 	exp := time.Now().Add(authTTL).Unix()
 	payload := strconv.FormatInt(exp, 10)
-	mac := hmac.New(sha256.New, []byte(s.authSecret()))
+	// Token doubles as HMAC secret; never expose raw in UI.
+	mac := hmac.New(sha256.New, []byte(s.currentToken()))
 	_, _ = mac.Write([]byte(payload))
 	val := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	http.SetCookie(w, &http.Cookie{
@@ -53,7 +49,7 @@ func (s *Server) validAuthCookie(r *http.Request) bool {
 	if err != nil || time.Now().Unix() > exp {
 		return false
 	}
-	mac := hmac.New(sha256.New, []byte(s.authSecret()))
+	mac := hmac.New(sha256.New, []byte(s.currentToken()))
 	_, _ = mac.Write([]byte(parts[0]))
 	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(want), []byte(parts[1]))

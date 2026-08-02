@@ -21,9 +21,9 @@ type showMenu struct {
 	Children []showMenu `json:"children,omitempty"`
 }
 
-// InjectSidebarMenu cleans stale HideMenu entries for「多机节点」.
+// RemoveStaleSidebarMenu drops leftover HideMenu entries for「多机节点».
 // Real sidebar entry is HTML/JS inject (Vue router cannot host /__mp/).
-func InjectSidebarMenu(dbPath string) error {
+func RemoveStaleSidebarMenu(dbPath string) error {
 	if dbPath == "" {
 		dbPath = DefaultCoreDB
 	}

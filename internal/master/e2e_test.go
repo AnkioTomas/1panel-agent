@@ -24,7 +24,7 @@ func TestTunnelProxy(t *testing.T) {
 			return
 		}
 		w.Header().Set("X-Echo-Auth", r.Header.Get("1Panel-Token"))
-		w.Header().Set("Set-Cookie", "sid=1; Path=/")
+		w.Header().Set("Set-Cookie", "psession=1; Path=/")
 		fmt.Fprint(w, "panel-ok")
 	}))
 	defer panel.Close()
@@ -94,7 +94,13 @@ func TestTunnelProxy(t *testing.T) {
 		t.Fatalf("agent not listed: %s", listBody)
 	}
 
-	resp, err := http.Get("http://" + masterAddr + "/n/agent01/hello")
+	// Production path: mp_node cookie + root-path tunnel.
+	req, err := http.NewRequest(http.MethodGet, "http://"+masterAddr+"/hello", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "mp_node", Value: "agent01"})
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +113,7 @@ func TestTunnelProxy(t *testing.T) {
 		t.Fatal("expected injected 1Panel-Token to reach panel")
 	}
 	sc := resp.Header.Get("Set-Cookie")
-	if !strings.Contains(sc, "Path=/n/agent01/") {
-		t.Fatalf("cookie path not rewritten: %q", sc)
+	if !strings.Contains(sc, "mp_r_psession=") {
+		t.Fatalf("panel cookie not remapped to mp_r_*: %q", sc)
 	}
 }

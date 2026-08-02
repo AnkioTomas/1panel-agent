@@ -27,8 +27,8 @@ type Client struct {
 }
 
 func Run(cfg *config.Agent) error {
-	if err := panel.InjectSidebarMenu(""); err != nil {
-		log.Printf("warn: inject sidebar menu on agent: %v", err)
+	if err := panel.RemoveStaleSidebarMenu(""); err != nil {
+		log.Printf("warn: clean sidebar menu on agent: %v", err)
 	}
 	c := &Client{Cfg: cfg}
 	backoff := time.Second
@@ -194,7 +194,7 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		Status:  resp.StatusCode,
 		Headers: protocol.HeaderFromHTTP(resp.Header),
 	}
-	if err := protocol.WriteResponseMeta(stream, respMeta); err != nil {
+	if err := protocol.WriteJSON(stream, respMeta); err != nil {
 		return
 	}
 	_ = protocol.CopyChunks(stream, resp.Body)
@@ -263,7 +263,7 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 		Status:  resp.StatusCode,
 		Headers: protocol.HeaderFromHTTP(resp.Header),
 	}
-	if err := protocol.WriteResponseMeta(stream, respMeta); err != nil {
+	if err := protocol.WriteJSON(stream, respMeta); err != nil {
 		return
 	}
 
@@ -294,7 +294,7 @@ func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 			"Content-Type": {"text/plain; charset=utf-8"},
 		},
 	}
-	if err := protocol.WriteResponseMeta(stream, meta); err != nil {
+	if err := protocol.WriteJSON(stream, meta); err != nil {
 		return
 	}
 	_ = protocol.CopyChunks(stream, strings.NewReader(msg))

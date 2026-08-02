@@ -16,10 +16,9 @@ func InjectAuth(h http.Header, apiKey string) {
 	if h.Get("1Panel-Token") != "" {
 		return
 	}
-	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	sum := md5.Sum([]byte("1panel" + apiKey + ts))
-	h.Set("1Panel-Token", hex.EncodeToString(sum[:]))
-	h.Set("1Panel-Timestamp", ts)
+	ts := time.Now().Unix()
+	h.Set("1Panel-Token", Token(apiKey, ts))
+	h.Set("1Panel-Timestamp", strconv.FormatInt(ts, 10))
 }
 
 func Token(apiKey string, unixTs int64) string {
