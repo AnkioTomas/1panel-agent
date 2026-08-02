@@ -21,7 +21,8 @@ type showMenu struct {
 	Children []showMenu `json:"children,omitempty"`
 }
 
-// InjectSidebarMenu adds "多机节点" into local 1Panel HideMenu (master or agent).
+// InjectSidebarMenu cleans stale HideMenu entries for「多机节点」.
+// Real sidebar entry is HTML/JS inject (Vue router cannot host /__mp/).
 func InjectSidebarMenu(dbPath string) error {
 	if dbPath == "" {
 		dbPath = DefaultCoreDB
@@ -40,41 +41,25 @@ func InjectSidebarMenu(dbPath string) error {
 	if err := json.Unmarshal([]byte(raw), &menus); err != nil {
 		return err
 	}
+	out := make([]showMenu, 0, len(menus))
+	removed := 0
 	for _, m := range menus {
 		if m.ID == multiPanelMenuID || m.Path == "/__mp/" || m.Label == "MultiPanel-Menu" {
-			log.Printf("sidebar menu already present")
-			return nil
-		}
-	}
-	item := showMenu{
-		ID:       multiPanelMenuID,
-		Label:    "MultiPanel-Menu",
-		Disabled: false,
-		IsShow:   true,
-		Title:    "多机节点",
-		Path:     "/__mp/",
-		Sort:     1050,
-	}
-	out := make([]showMenu, 0, len(menus)+1)
-	inserted := false
-	for _, m := range menus {
-		if !inserted && m.ID == "13" {
-			out = append(out, item)
-			inserted = true
+			removed++
+			continue
 		}
 		out = append(out, m)
 	}
-	if !inserted {
-		out = append(out, item)
+	if removed == 0 {
+		return nil
 	}
 	data, err := json.Marshal(out)
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(`UPDATE settings SET value = ? WHERE key = 'HideMenu'`, string(data))
-	if err != nil {
+	if _, err = db.Exec(`UPDATE settings SET value = ? WHERE key = 'HideMenu'`, string(data)); err != nil {
 		return err
 	}
-	log.Printf("injected sidebar menu: 多机节点 -> /__mp/")
+	log.Printf("removed stale HideMenu entry 多机节点 (x%d); sidebar uses HTML inject only", removed)
 	return nil
 }

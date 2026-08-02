@@ -166,6 +166,7 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		return
 	}
 	protocol.ApplyHeader(req.Header, meta.Headers)
+	req.Header.Del("Accept-Encoding")
 	req.Host = panelURL.Host
 	panel.InjectAuth(req.Header, c.Cfg.PanelKey)
 

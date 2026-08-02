@@ -10,6 +10,7 @@ type AgentInfo struct {
 	ID       string
 	Hostname string
 	PanelURL string
+	RemoteIP string
 }
 
 type Session struct {

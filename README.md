@@ -43,7 +43,9 @@ sudo ./bin/1pm master \
 | `--panel-user/pass` | 切换子节点时预登录用的 1Panel 账号 |
 | `--no-takeover` | 不挪动本机 1Panel（需自行 `--listen` / `--upstream`） |
 
-管理页：`http://<master>:<原面板端口>/__mp/`
+管理页：`http://<master>:<原面板端口>/__mp/`（**需先登录本机 1Panel**；未登录会跳转安全入口）
+
+左侧菜单：Master 启动时写入 `HideMenu`「多机节点」，并注入脚本强制整页跳转（避开 Vue 路由）。
 
 状态文件：`/var/lib/1pm/master.json`
 
@@ -65,8 +67,8 @@ systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.s
 
 1. 打开 `http://master:端口/__mp/`
 2. 复制「子节点注册命令」到 Agent 机器执行
-3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点 1Panel，并设置 `mp_node` cookie，之后根路径流量都走该 Agent
-4. 点「切换回本机 1Panel」清除远程节点选择
+3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点；远程会话存在 `mp_r_*` cookie，**不会覆盖**本机 `psession`
+4. 点「切换回本机 1Panel」只清除 `mp_node`，本机登录态保留，无需重新登录
 
 ## 实验室验证（已通过）
 

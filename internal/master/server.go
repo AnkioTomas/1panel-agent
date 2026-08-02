@@ -208,9 +208,13 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := AgentInfo{ID: reg.ID, Hostname: reg.Hostname, PanelURL: reg.PanelURL}
+	remoteIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(remoteIP); err == nil {
+		remoteIP = host
+	}
+	info := AgentInfo{ID: reg.ID, Hostname: reg.Hostname, PanelURL: reg.PanelURL, RemoteIP: remoteIP}
 	s.reg.Put(&Session{Info: info, Mux: session})
-	log.Printf("agent online: %s (%s)", info.Hostname, info.ID)
+	log.Printf("agent online: %s (%s) from %s", info.Hostname, info.ID, remoteIP)
 
 	<-session.CloseChan()
 	s.reg.Remove(info.ID, session)
@@ -272,6 +276,13 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
+	// Force identity encoding so we can inject HTML into the tunnel response body.
+	delete(headers, "Accept-Encoding")
+	for k := range headers {
+		if strings.EqualFold(k, "Accept-Encoding") {
+			delete(headers, k)
+		}
+	}
 	if prefix == "" {
 		// Root-path remote node: keep local psession intact, use mp_r_* for agent.
 		applyRemoteRequestCookies(headers, r)
@@ -315,8 +326,12 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 			break
 		}
 	}
-	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(ct, "text/html") {
-		respBody = s.injectHookHTML(respBody)
+	// Decode before rewrite; strip hop headers so browser gets the bytes we write.
+	respBody = maybeGunzip(respBody, respMeta.Headers)
+	dropHopHeaders(respMeta.Headers)
+	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
+		// Always show Master advertise IP as「本机」; agent IP comes from /__mp/api/agents.
+		respBody = s.injectHookHTML(respBody, s.DeviceIP())
 	}
 	if prefix == "" {
 		rewriteSetCookieToRemoteNamespace(respMeta.Headers)
@@ -325,7 +340,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	h := w.Header()
 	for k, vals := range respMeta.Headers {
 		ck := http.CanonicalHeaderKey(k)
-		if ck == "Content-Length" || ck == "Transfer-Encoding" {
+		if ck == "Content-Length" || ck == "Transfer-Encoding" || ck == "Content-Encoding" {
 			continue
 		}
 		for _, v := range vals {

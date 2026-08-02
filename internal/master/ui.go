@@ -53,6 +53,7 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 		ID       string `json:"id"`
 		Hostname string `json:"hostname"`
 		PanelURL string `json:"panel_url"`
+		RemoteIP string `json:"remote_ip"`
 		OpenURL  string `json:"open_url"`
 	}
 	list := s.reg.List()
@@ -62,6 +63,7 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 			ID:       a.ID,
 			Hostname: a.Hostname,
 			PanelURL: a.PanelURL,
+			RemoteIP: a.RemoteIP,
 			OpenURL:  "/__mp/go/" + a.ID,
 		})
 	}
@@ -214,25 +216,25 @@ tr:last-child td{border-bottom:0}
     </svg>
     <span>多机节点</span>
   </div>
-  <div class="device" title="当前设备 IP">
+  <div class="device" title="本机网卡地址">
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm0 2a8 8 0 0 1 7.75 6H4.25A8 8 0 0 1 12 4zm0 16a8 8 0 0 1-7.75-6h15.5A8 8 0 0 1 12 20z"/></svg>
-    当前设备 IP：<strong>{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</strong>
+    <strong>{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</strong>
   </div>
 </header>
 
 <div class="wrap">
   <div class="stats">
     <div class="stat">
-      <div class="label">当前设备 IP</div>
-      <div class="value ip">{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</div>
-    </div>
-    <div class="stat">
       <div class="label">在线 Agent</div>
       <div class="value">{{.Online}}</div>
     </div>
     <div class="stat">
-      <div class="label">Master 入口</div>
-      <div class="value" style="font-size:16px">{{.Host}}</div>
+      <div class="label">注册地址</div>
+      <div class="value" style="font-size:14px;word-break:break-all">{{.Host}}</div>
+    </div>
+    <div class="stat">
+      <div class="label">安全入口</div>
+      <div class="value" style="font-size:16px">{{if .Entrance}}/{{.Entrance}}{{else}}-{{end}}</div>
     </div>
   </div>
 
@@ -256,15 +258,15 @@ tr:last-child td{border-bottom:0}
       {{if .Agents}}
       <table>
         <thead>
-          <tr><th style="padding-left:18px">状态</th><th>主机名</th><th>节点 ID</th><th>面板地址</th><th style="width:120px"></th></tr>
+          <tr><th style="padding-left:18px">状态</th><th>主机名</th><th>IP</th><th>节点 ID</th><th style="width:120px"></th></tr>
         </thead>
         <tbody>
         {{range .Agents}}
           <tr>
             <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
             <td>{{.Hostname}}</td>
+            <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
             <td><code style="font-size:12px;color:var(--text-regular)">{{.ID}}</code></td>
-            <td style="color:var(--text-secondary)">{{.PanelURL}}</td>
             <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
           </tr>
         {{end}}
