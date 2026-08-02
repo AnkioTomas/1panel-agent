@@ -272,6 +272,10 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
+	if prefix == "" {
+		// Root-path remote node: keep local psession intact, use mp_r_* for agent.
+		applyRemoteRequestCookies(headers, r)
+	}
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeHTTP,
 		Method:  r.Method,
@@ -313,6 +317,9 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	}
 	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(ct, "text/html") {
 		respBody = injectHookHTML(respBody)
+	}
+	if prefix == "" {
+		rewriteSetCookieToRemoteNamespace(respMeta.Headers)
 	}
 
 	h := w.Header()
@@ -398,6 +405,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
+	if prefix == "" {
+		applyRemoteRequestCookies(headers, r)
+	}
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeWS,
 		Method:  http.MethodGet,
@@ -417,6 +427,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 	if err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
+	}
+	if prefix == "" {
+		rewriteSetCookieToRemoteNamespace(respMeta.Headers)
 	}
 	if respMeta.Status != http.StatusSwitchingProtocols {
 		h := w.Header()

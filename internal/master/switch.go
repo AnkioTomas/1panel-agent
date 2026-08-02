@@ -44,26 +44,14 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request, id string)
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// Store remote session under mp_r_* — never overwrite local psession.
 	seen := map[string]bool{}
 	for _, c := range res.Cookies {
 		seen[c.Name] = true
-		http.SetCookie(w, &http.Cookie{
-			Name:     c.Name,
-			Value:    c.Value,
-			Path:     "/",
-			HttpOnly: c.HttpOnly,
-			Secure:   false,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setRemotePanelCookie(w, c.Name, c.Value, c.HttpOnly)
 	}
 	if entrance != "" && !seen["SecurityEntrance"] {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "SecurityEntrance",
-			Value:    base64.StdEncoding.EncodeToString([]byte(entrance)),
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setRemotePanelCookie(w, "SecurityEntrance", base64.StdEncoding.EncodeToString([]byte(entrance)), true)
 	}
 
 	target := "/"
