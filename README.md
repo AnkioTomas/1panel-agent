@@ -24,6 +24,17 @@ go build -o bin/1pm ./cmd/1panel-agent
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/1pm ./cmd/1panel-agent
 ```
 
+## 发布
+
+推送版本 tag 后，GitHub Actions 自动构建并创建 Release（含 `linux/darwin` × `amd64/arm64` 与 `checksums.txt`）：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可在 Actions 里手动跑 **Release** workflow。
+
 ## Master（需 root）
 
 自动读取 `/opt/1panel/db/core.db`：把本机 1Panel 挪到内部端口，Master 监听原端口并反代。

@@ -9,6 +9,9 @@ import (
 	"1panel-agent/internal/master"
 )
 
+// Set by release builds: -ldflags "-X main.version=v1.2.3"
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -29,6 +32,8 @@ func main() {
 		if err := runAgent(os.Args[2:]); err != nil {
 			fatal(err)
 		}
+	case "version", "-v", "--version":
+		fmt.Println(version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -235,7 +240,7 @@ func runAgentSet(args []string) error {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `1pm — 1Panel multi-node tunnel (Master + Agent)
+	fmt.Fprintf(os.Stderr, `1pm %s — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
   # Master needs no panel URL / host / panel-token.
@@ -246,8 +251,10 @@ Usage:
   1pm master                                          # systemd: ExecStart=/usr/local/bin/1pm master
   curl -fsSL "http://<master>:<port>/agent.sh?token=<TOKEN>" | sudo bash
 
+  1pm version
+
 Master UI: http://<master>:<panel-port>/__mp/
-`)
+`, version)
 }
 
 func fatal(err error) {

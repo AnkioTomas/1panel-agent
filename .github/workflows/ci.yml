@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build smoke
+        run: |
+          CGO_ENABLED=0 go build -o /tmp/1pm ./cmd/1panel-agent
+          /tmp/1pm help >/dev/null || /tmp/1pm 2>&1 | head -5
