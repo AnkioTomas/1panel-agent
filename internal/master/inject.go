@@ -218,7 +218,10 @@ function mountSwitch(){
     '<svg class="mp-ns-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'+
       '<path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>'+
     '</svg>'+
-    '<span class="mp-ns-text">本机</span>'+
+    '<span class="mp-ns-text">'+
+      '<span class="mp-ns-title">主节点</span>'+
+      '<span class="mp-ns-ip"></span>'+
+    '</span>'+
     '<span class="mp-ns-caret">▾</span>';
   host.parentNode.insertBefore(btn, host);
   bindSwitch(btn);
