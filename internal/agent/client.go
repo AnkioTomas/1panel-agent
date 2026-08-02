@@ -27,6 +27,9 @@ type Client struct {
 }
 
 func Run(cfg *config.Agent) error {
+	if err := panel.InjectSidebarMenu(""); err != nil {
+		log.Printf("warn: inject sidebar menu on agent: %v", err)
+	}
 	c := &Client{Cfg: cfg}
 	backoff := time.Second
 	for {

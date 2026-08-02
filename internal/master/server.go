@@ -115,7 +115,7 @@ func New(opts Options) (*Server, error) {
 		}
 		s.wrapLocalProxy()
 	}
-	if err := InjectSidebarMenu(opts.DBPath); err != nil {
+	if err := panel.InjectSidebarMenu(opts.DBPath); err != nil {
 		log.Printf("warn: inject sidebar menu: %v", err)
 	}
 	return s, nil
@@ -316,7 +316,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 		}
 	}
 	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(ct, "text/html") {
-		respBody = injectHookHTML(respBody)
+		respBody = s.injectHookHTML(respBody)
 	}
 	if prefix == "" {
 		rewriteSetCookieToRemoteNamespace(respMeta.Headers)

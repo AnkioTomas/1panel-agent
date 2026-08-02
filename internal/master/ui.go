@@ -9,7 +9,6 @@ import (
 
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
-	// Bootstrap: issue mp_auth when local 1Panel session is valid.
 	if path == "/touch" {
 		if s.localPanelLoggedIn(r) {
 			s.issueAuthCookie(w)
@@ -75,20 +74,24 @@ type pageData struct {
 	Register   string
 	Token      string
 	Host       string
+	DeviceIP   string
 	Entrance   string
 	LocalPanel string
+	Online     int
 }
 
 func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	host := s.AdvertiseHost(r)
-	regCmd := "1pm agent register " + host + "/" + s.Token
+	agents := s.reg.List()
 	data := pageData{
-		Agents:     s.reg.List(),
-		Register:   regCmd,
+		Agents:     agents,
+		Register:   "1pm agent register " + host + "/" + s.Token,
 		Token:      s.Token,
 		Host:       host,
+		DeviceIP:   s.DeviceIP(),
 		Entrance:   s.Entrance,
 		LocalPanel: s.LocalPanel,
+		Online:     len(agents),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = nodesTmpl.Execute(w, data)
@@ -99,77 +102,194 @@ var nodesTmpl = template.Must(template.New("nodes").Parse(`<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>1Panel 多机节点</title>
+<title>多机节点 - 1Panel</title>
 <style>
-:root{--bg:#0f1419;--card:#1a2332;--line:#2d3a4d;--text:#e7ecf3;--muted:#8b9bb4;--accent:#3b82f6;--ok:#22c55e}
+:root{
+  --el-color-primary:#409EFF;
+  --el-color-primary-dark:#337ecc;
+  --panel-primary:#005eeb;
+  --bg-page:#f2f3f5;
+  --bg-card:#ffffff;
+  --text-primary:#303133;
+  --text-regular:#606266;
+  --text-secondary:#909399;
+  --border:#e4e7ed;
+  --success:#67c23a;
+  --shadow:0 1px 4px rgba(0,21,41,.08);
+  --radius:6px;
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:linear-gradient(160deg,#0f1419,#152033 50%,#0f1419);color:var(--text);min-height:100vh}
-.wrap{max-width:920px;margin:0 auto;padding:2rem 1.25rem 3rem}
-h1{font-size:1.5rem;margin:0 0 .35rem}
-.sub{color:var(--muted);margin:0 0 1.5rem;font-size:.95rem}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:0 0 1rem}
-.card h2{font-size:1rem;margin:0 0 .75rem}
-.cmd{display:flex;gap:.5rem;align-items:stretch}
-.cmd code{flex:1;background:#0b1020;border:1px solid var(--line);border-radius:8px;padding:.75rem .9rem;font-size:.85rem;overflow:auto;white-space:nowrap}
-button,.btn{border:0;border-radius:8px;background:var(--accent);color:#fff;padding:.7rem 1rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
-button.secondary{background:#334155}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:Helvetica Neue,Helvetica,PingFang SC,Hiragino Sans GB,Microsoft YaHei,Arial,sans-serif;
+  background:var(--bg-page);
+  color:var(--text-primary);
+}
+.topbar{
+  height:56px;
+  background:#fff;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;
+  box-shadow:var(--shadow);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px}
+.brand svg{color:var(--panel-primary)}
+.device{
+  display:flex;align-items:center;gap:8px;
+  color:var(--text-regular);font-size:13px;
+  background:#f5f7fa;border:1px solid var(--border);
+  border-radius:20px;padding:6px 12px;
+}
+.device strong{color:var(--panel-primary);font-weight:600}
+.wrap{max-width:1080px;margin:0 auto;padding:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
+.stat{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 18px;box-shadow:var(--shadow);
+}
+.stat .label{color:var(--text-secondary);font-size:13px;margin-bottom:8px}
+.stat .value{font-size:22px;font-weight:600;color:var(--text-primary)}
+.stat .value.ip{font-size:18px;color:var(--panel-primary);letter-spacing:.3px}
+.card{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden;
+}
+.card-hd{
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.card-hd h2{margin:0;font-size:15px;font-weight:600}
+.card-bd{padding:18px}
+.cmd{display:flex;gap:10px;align-items:stretch}
+.cmd code{
+  flex:1;background:#f5f7fa;border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 12px;font-size:13px;color:var(--text-regular);overflow:auto;white-space:nowrap;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+}
+.btn{
+  border:1px solid transparent;border-radius:var(--radius);
+  background:var(--el-color-primary);color:#fff;
+  padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;
+  text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  line-height:1.4;white-space:nowrap;
+}
+.btn:hover{background:var(--el-color-primary-dark)}
+.btn.plain{
+  background:#fff;color:var(--text-regular);border-color:var(--border);
+}
+.btn.plain:hover{color:var(--el-color-primary);border-color:var(--el-color-primary-light-5,#a0cfff);background:#ecf5ff}
+.btn.primary-panel{background:var(--panel-primary)}
+.btn.primary-panel:hover{background:#0052cc}
+.meta{margin:10px 0 0;color:var(--text-secondary);font-size:12px}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:.7rem .4rem;border-bottom:1px solid var(--line);font-size:.92rem}
-th{color:var(--muted);font-weight:600}
-.dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--ok);margin-right:.4rem}
-.empty{color:var(--muted);padding:.5rem 0}
-.toast{position:fixed;right:1rem;bottom:1rem;background:#14532d;color:#dcfce7;padding:.6rem .9rem;border-radius:8px;opacity:0;transition:.2s}
-.toast.show{opacity:1}
-a.link{color:#93c5fd}
+th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+th{color:var(--text-secondary);font-weight:500;background:#fafafa}
+tr:last-child td{border-bottom:0}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:6px}
+.tag{
+  display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;
+  background:#f0f9eb;color:#67c23a;font-size:12px;border:1px solid #e1f3d8;
+}
+.empty{color:var(--text-secondary);padding:24px 0;text-align:center;font-size:13px}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.toast{
+  position:fixed;right:20px;bottom:20px;background:#f0f9eb;color:#529b2e;
+  border:1px solid #e1f3d8;padding:10px 14px;border-radius:var(--radius);
+  opacity:0;transform:translateY(8px);transition:.2s;font-size:13px;z-index:99;
+}
+.toast.show{opacity:1;transform:translateY(0)}
+@media (max-width:800px){
+  .stats{grid-template-columns:1fr}
+  .cmd{flex-direction:column}
+}
 </style>
 </head>
 <body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>
+    </svg>
+    <span>多机节点</span>
+  </div>
+  <div class="device" title="当前设备 IP">
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm0 2a8 8 0 0 1 7.75 6H4.25A8 8 0 0 1 12 4zm0 16a8 8 0 0 1-7.75-6h15.5A8 8 0 0 1 12 20z"/></svg>
+    当前设备 IP：<strong>{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</strong>
+  </div>
+</header>
+
 <div class="wrap">
-  <h1>1Panel 多机节点</h1>
-  <p class="sub">需先登录本机 1Panel。左侧菜单「多机节点」进入本页；Agent 接入后可一键切换并预登录。</p>
-
-  <div class="card">
-    <h2>子节点注册命令</h2>
-    <div class="cmd">
-      <code id="reg">{{.Register}}</code>
-      <button type="button" onclick="copyReg()">复制</button>
+  <div class="stats">
+    <div class="stat">
+      <div class="label">当前设备 IP</div>
+      <div class="value ip">{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</div>
     </div>
-    <p class="sub" style="margin:.75rem 0 0">Master: {{.Host}} · Token 已嵌入命令{{if .Entrance}} · 安全入口: {{.Entrance}}{{end}}</p>
+    <div class="stat">
+      <div class="label">在线 Agent</div>
+      <div class="value">{{.Online}}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Master 入口</div>
+      <div class="value" style="font-size:16px">{{.Host}}</div>
+    </div>
   </div>
 
   <div class="card">
-    <h2>在线 Agent <button class="secondary" type="button" onclick="location.reload()">刷新</button></h2>
-    {{if .Agents}}
-    <table>
-      <thead><tr><th>状态</th><th>主机</th><th>ID</th><th>本机面板</th><th></th></tr></thead>
-      <tbody>
-      {{range .Agents}}
-        <tr>
-          <td><span class="dot"></span>在线</td>
-          <td>{{.Hostname}}</td>
-          <td><code>{{.ID}}</code></td>
-          <td class="sub">{{.PanelURL}}</td>
-          <td><a class="btn" href="/__mp/go/{{.ID}}">进入面板</a></td>
-        </tr>
+    <div class="card-hd"><h2>子节点注册命令</h2></div>
+    <div class="card-bd">
+      <div class="cmd">
+        <code id="reg">{{.Register}}</code>
+        <button class="btn" type="button" onclick="copyReg()">复制命令</button>
+      </div>
+      <p class="meta">在 Agent 机器执行。Token 已包含在命令中{{if .Entrance}} · 安全入口 {{.Entrance}}{{end}}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <h2>在线节点</h2>
+      <button class="btn plain" type="button" onclick="location.reload()">刷新</button>
+    </div>
+    <div class="card-bd" style="padding:0">
+      {{if .Agents}}
+      <table>
+        <thead>
+          <tr><th style="padding-left:18px">状态</th><th>主机名</th><th>节点 ID</th><th>面板地址</th><th style="width:120px"></th></tr>
+        </thead>
+        <tbody>
+        {{range .Agents}}
+          <tr>
+            <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
+            <td>{{.Hostname}}</td>
+            <td><code style="font-size:12px;color:var(--text-regular)">{{.ID}}</code></td>
+            <td style="color:var(--text-secondary)">{{.PanelURL}}</td>
+            <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="empty">暂无在线 Agent，请先在子节点执行上方注册命令</p>
       {{end}}
-      </tbody>
-    </table>
-    {{else}}
-      <p class="empty">暂无在线 Agent。在子机执行上方注册命令。</p>
-    {{end}}
+    </div>
   </div>
 
   <div class="card">
-    <h2>本机面板</h2>
-    <p class="sub">上游: {{.LocalPanel}} · 切换远程节点后点此可回到本机</p>
-    <a class="btn" href="/__mp/local">切换回本机 1Panel</a>
-    {{if .Entrance}}
-    <a class="btn secondary" style="margin-left:.5rem" href="/{{.Entrance}}">安全入口 /{{.Entrance}}</a>
-    {{end}}
-    <a class="btn secondary" style="margin-left:.5rem" href="/__mp/">节点管理</a>
+    <div class="card-hd"><h2>本机面板</h2></div>
+    <div class="card-bd">
+      <p class="meta" style="margin:0 0 14px">上游 {{.LocalPanel}}。切换远程节点不会覆盖本机登录态。</p>
+      <div class="actions">
+        <a class="btn primary-panel" href="/__mp/local">切换回本机 1Panel</a>
+        {{if .Entrance}}<a class="btn plain" href="/{{.Entrance}}">打开安全入口</a>{{end}}
+        <a class="btn plain" href="/__mp/">刷新本页</a>
+      </div>
+    </div>
   </div>
 </div>
-<div class="toast" id="toast">已复制</div>
+
+<div class="toast" id="toast">复制成功</div>
 <script>
 function copyReg(){
   const t=document.getElementById('reg').innerText;

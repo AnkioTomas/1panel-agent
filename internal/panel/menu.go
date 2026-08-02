@@ -1,4 +1,4 @@
-package master
+package panel
 
 import (
 	"database/sql"
@@ -6,8 +6,6 @@ import (
 	"log"
 
 	_ "modernc.org/sqlite"
-
-	"1panel-agent/internal/panel"
 )
 
 const multiPanelMenuID = "91"
@@ -23,10 +21,10 @@ type showMenu struct {
 	Children []showMenu `json:"children,omitempty"`
 }
 
-// InjectSidebarMenu adds "多机节点" into 1Panel HideMenu settings.
+// InjectSidebarMenu adds "多机节点" into local 1Panel HideMenu (master or agent).
 func InjectSidebarMenu(dbPath string) error {
 	if dbPath == "" {
-		dbPath = panel.DefaultCoreDB
+		dbPath = DefaultCoreDB
 	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -57,7 +55,6 @@ func InjectSidebarMenu(dbPath string) error {
 		Path:     "/__mp/",
 		Sort:     1050,
 	}
-	// Insert before Setting-Menu (id 13) when possible.
 	out := make([]showMenu, 0, len(menus)+1)
 	inserted := false
 	for _, m := range menus {

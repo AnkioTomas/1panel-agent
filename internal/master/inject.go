@@ -3,14 +3,20 @@ package master
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-// sidebarHook forces full-page navigation for /__mp, patches sidebar, handles mp_return.
-const sidebarHook = `<script data-mp-hook="1">(function(){
+func sidebarHook(deviceIP string) string {
+	if deviceIP == "" {
+		deviceIP = "-"
+	}
+	ipJSON, _ := json.Marshal(deviceIP)
+	const tpl = `<script data-mp-hook="1">(function(){
+var DEVICE_IP=__DEVICE_IP__;
 function goMP(e){
   try{
     var t=e.target;
@@ -26,16 +32,54 @@ function goMP(e){
   }catch(err){}
 }
 function ensureMenu(){
-  if(document.getElementById("mp-menu-link"))return;
-  var side=document.querySelector(".el-menu")||document.querySelector(".sidebar-container nav")||document.querySelector("aside .el-menu");
+  var side=document.querySelector(".sidebar-container .el-menu")||document.querySelector(".el-menu");
   if(!side)return;
-  var a=document.createElement("a");
-  a.id="mp-menu-link";
-  a.href="/__mp/";
-  a.textContent="多机节点";
-  a.setAttribute("index","/__mp/");
-  a.style.cssText="display:flex;align-items:center;margin:8px 12px;padding:10px 14px;border-radius:8px;background:#2563eb;color:#fff;text-decoration:none;font-size:14px;font-weight:600";
-  side.appendChild(a);
+  // Style native HideMenu item (agent/master DB) and keep DOM fallback.
+  if(!document.getElementById("mp-menu-style")){
+    var st=document.createElement("style");
+    st.id="mp-menu-style";
+    st.textContent=
+      '.el-menu-item[index="/__mp/"],#mp-menu-link.el-menu-item{height:auto!important;line-height:1.2!important;padding:10px 12px!important;margin:4px 0!important;border-radius:6px!important;}'+
+      "#mp-menu-link .mp-menu-inner{display:flex;align-items:center;gap:10px;width:100%;}"+
+      "#mp-menu-link .mp-menu-icon{flex:0 0 18px;opacity:.9;}"+
+      "#mp-menu-link .mp-menu-text{display:flex;flex-direction:column;gap:2px;min-width:0;}"+
+      "#mp-menu-link .mp-menu-title{font-size:14px;font-weight:500;}"+
+      "#mp-menu-link .mp-menu-ip{font-size:12px;opacity:.65;letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
+      '.el-menu-item[index="/__mp/"]:hover,#mp-menu-link:hover{background:rgba(0,94,235,.08)!important;}'+
+      '.el-menu-item[index="/__mp/"] .mp-native-ip{display:block;font-size:12px;opacity:.65;margin-top:2px;}';
+    document.head.appendChild(st);
+  }
+  var native=side.querySelector('.el-menu-item[index="/__mp/"]');
+  if(native){
+    if(!native.querySelector(".mp-native-ip") && DEVICE_IP && DEVICE_IP!=="-"){
+      var ip=document.createElement("span");
+      ip.className="mp-native-ip";
+      ip.textContent=DEVICE_IP;
+      native.appendChild(ip);
+    }
+    native.title="多机节点 · "+DEVICE_IP;
+    return;
+  }
+  if(document.getElementById("mp-menu-link"))return;
+  var li=document.createElement("li");
+  li.id="mp-menu-link";
+  li.className="el-menu-item";
+  li.setAttribute("role","menuitem");
+  li.setAttribute("tabindex","-1");
+  li.setAttribute("index","/__mp/");
+  li.title="多机节点 · "+DEVICE_IP;
+  li.innerHTML='<span class="mp-menu-inner">'+
+    '<svg class="mp-menu-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'+
+      '<path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>'+
+    '</svg>'+
+    '<span class="mp-menu-text">'+
+      '<span class="mp-menu-title">多机节点</span>'+
+      '<span class="mp-menu-ip">'+DEVICE_IP+'</span>'+
+    '</span>'+
+  '</span>';
+  var settings=side.querySelector('.el-menu-item[index="/settings"]') || side.querySelector('.el-sub-menu[index="/settings"]');
+  if(settings&&settings.parentElement===side){ side.insertBefore(li, settings); }
+  else { side.appendChild(li); }
 }
 document.addEventListener("click",goMP,true);
 setInterval(ensureMenu,800);
@@ -51,18 +95,21 @@ try{
   }
 }catch(err){}
 })();</script>`
+	return strings.ReplaceAll(tpl, "__DEVICE_IP__", string(ipJSON))
+}
 
-func injectHookHTML(body []byte) []byte {
+func (s *Server) injectHookHTML(body []byte) []byte {
 	if bytes.Contains(body, []byte(`data-mp-hook="1"`)) {
 		return body
 	}
+	hook := []byte(sidebarHook(s.DeviceIP()))
 	if i := bytes.LastIndex(bytes.ToLower(body), []byte("</body>")); i >= 0 {
 		out := append([]byte{}, body[:i]...)
-		out = append(out, []byte(sidebarHook)...)
+		out = append(out, hook...)
 		out = append(out, body[i:]...)
 		return out
 	}
-	return append(body, []byte(sidebarHook)...)
+	return append(body, hook...)
 }
 
 func (s *Server) wrapLocalProxy() {
@@ -72,7 +119,6 @@ func (s *Server) wrapLocalProxy() {
 	upstream := s.localProxy.Director
 	s.localProxy.Director = func(r *http.Request) {
 		upstream(r)
-		// Avoid compressed HTML we can't patch reliably without full decode.
 		r.Header.Del("Accept-Encoding")
 	}
 	s.localProxy.ModifyResponse = func(resp *http.Response) error {
@@ -80,7 +126,6 @@ func (s *Server) wrapLocalProxy() {
 		if !strings.Contains(ct, "text/html") {
 			return nil
 		}
-		// Don't inject into tiny error pages unnecessarily — still OK if we do.
 		var body []byte
 		var err error
 		ce := resp.Header.Get("Content-Encoding")
@@ -104,7 +149,7 @@ func (s *Server) wrapLocalProxy() {
 				return nil
 			}
 		}
-		patched := injectHookHTML(body)
+		patched := s.injectHookHTML(body)
 		resp.Body = io.NopCloser(bytes.NewReader(patched))
 		resp.ContentLength = int64(len(patched))
 		resp.Header.Set("Content-Length", strconv.Itoa(len(patched)))
