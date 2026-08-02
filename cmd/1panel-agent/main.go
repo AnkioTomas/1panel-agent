@@ -68,6 +68,18 @@ func runMaster(args []string) error {
 				return fmt.Errorf("--host needs a value")
 			}
 			opts.PublicHost = args[i]
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			opts.PanelUser = args[i]
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			opts.PanelPass = args[i]
 		case "--entrance":
 			i++
 			if i >= len(args) {
@@ -109,6 +121,20 @@ func runMasterSet(args []string) error {
 			}
 			st.PublicHost = args[i]
 			changed = true
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			st.PanelUser = args[i]
+			changed = true
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			st.PanelPassword = args[i]
+			changed = true
 		case "--token":
 			i++
 			if i >= len(args) {
@@ -128,7 +154,7 @@ func runMasterSet(args []string) error {
 		}
 	}
 	if !changed {
-		return fmt.Errorf("usage: 1pm master set [--host IP] [--token T] [--entrance E]")
+		return fmt.Errorf("usage: 1pm master set [--host IP] [--panel-pass P] [--panel-user U] [--token T] [--entrance E]")
 	}
 	if err := config.SaveMaster(st); err != nil {
 		return err

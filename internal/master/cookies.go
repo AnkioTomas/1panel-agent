@@ -101,3 +101,17 @@ func renameSetCookieToRemote(setCookie string) string {
 	}
 	return strings.Join(parts, ";")
 }
+
+func setRemotePanelCookie(w http.ResponseWriter, name, value string, httpOnly bool) {
+	if isPanelCookie(name) {
+		name = remoteCookiePrefix + name
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: httpOnly,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+}

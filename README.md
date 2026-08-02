@@ -62,7 +62,7 @@ curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/release
 | 隧道 token | 自动生成；UI 可轮换 |
 | 入口 / 端口 | `core.db` |
 | `/__mp/` 鉴权 | 浏览器现有本机 1Panel 登录态 → `mp_auth`；不存密码 |
-| 切换子节点 | 只设 `mp_node`；远端登录/入口由子节点 1Panel（经 Agent 反代）自己处理 |
+| 切换子节点 | 经隧道预登录远端，会话写入 `mp_r_*`（需 `1pm master set --panel-pass`） |
 
 systemd：`ExecStart=/usr/local/bin/1pm master`。
 

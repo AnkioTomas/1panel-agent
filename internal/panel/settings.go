@@ -17,6 +17,7 @@ const DefaultCoreDB = "/opt/1panel/db/core.db"
 type Settings struct {
 	ServerPort       int
 	SecurityEntrance string
+	UserName         string
 	SystemVersion    string
 }
 
@@ -34,7 +35,7 @@ func ReadSettings(dbPath string) (*Settings, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`SELECT key, value FROM settings WHERE key IN (
-		'ServerPort','SecurityEntrance','SystemVersion')`)
+		'ServerPort','SecurityEntrance','UserName','SystemVersion')`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,6 +56,7 @@ func ReadSettings(dbPath string) (*Settings, error) {
 	return &Settings{
 		ServerPort:       port,
 		SecurityEntrance: m["SecurityEntrance"],
+		UserName:         m["UserName"],
 		SystemVersion:    m["SystemVersion"],
 	}, nil
 }

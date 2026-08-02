@@ -2,16 +2,19 @@
 # 1pm Master one-click installer
 # Usage:
 #   curl -fsSL <script-url> | sudo bash
+#   curl -fsSL <script-url> | sudo PANEL_PASS='xxx' bash
 #   curl -fsSL <script-url> | sudo INSTALL_CDN=cn VERSION=v0.0.1 bash
 #
 # INSTALL_CDN:  auto (default) | global | cn
 # VERSION:      empty = latest GitHub release
+# PANEL_PASS:   optional; enables node-switch auto-login
 # REPO:         AnkioTomas/1panel-agent
 set -euo pipefail
 
 REPO="${REPO:-AnkioTomas/1panel-agent}"
 INSTALL_CDN="${INSTALL_CDN:-auto}"
 VERSION="${VERSION:-}"
+PANEL_PASS="${PANEL_PASS:-}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/1pm}"
 UNIT_PATH="${UNIT_PATH:-/etc/systemd/system/1pm-master.service}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
@@ -262,6 +265,26 @@ WantedBy=multi-user.target
 EOF
 }
 
+maybe_set_password() {
+  if [[ -n "$PANEL_PASS" ]]; then
+    log "save panel password for node-switch login"
+    "$BIN_PATH" master set --panel-pass "$PANEL_PASS"
+    return
+  fi
+  if [[ -t 0 ]]; then
+    local pass
+    read -r -s -p "Panel password for node-switch login (Enter to skip): " pass
+    echo
+    if [[ -n "$pass" ]]; then
+      "$BIN_PATH" master set --panel-pass "$pass"
+    else
+      warn "skipped — later: 1pm master set --panel-pass PASS"
+    fi
+  else
+    warn "no PANEL_PASS and no TTY — later: 1pm master set --panel-pass PASS"
+  fi
+}
+
 # Read key=value from master.json without requiring jq.
 json_str() {
   local key="$1" file="$2"
@@ -360,6 +383,7 @@ main() {
   systemctl stop 1pm-master.service 2>/dev/null || true
   install -m 755 "$tmpdir/$asset" "$BIN_PATH"
   write_unit
+  maybe_set_password
 
   systemctl daemon-reload
   systemctl enable 1pm-master.service

@@ -1,8 +1,13 @@
 package master
 
 import (
+	"encoding/base64"
+	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"1panel-agent/internal/panel"
 )
 
 func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request, id string) {
@@ -10,19 +15,51 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request, id string)
 		http.Error(w, "missing agent id", http.StatusBadRequest)
 		return
 	}
-	if _, ok := s.reg.Get(id); !ok {
+	sess, ok := s.reg.Get(id)
+	if !ok {
 		http.Error(w, "agent offline", http.StatusBadGateway)
 		return
 	}
+	if s.PanelUser == "" || s.PanelPass == "" {
+		http.Error(w, "panel password not set; run: 1pm master set --panel-pass PASS", http.StatusInternalServerError)
+		return
+	}
 
-	// Select node only. Remote 1Panel login/entrance is the agent's job (proxied as-is).
+	// Prefetch remote session through the tunnel so the browser lands logged-in.
+	// Cookies are stored as mp_r_* — never overwrite local psession.
+	entrance := s.Entrance
+	client := &http.Client{
+		Transport: &tunnelTransport{mux: sess.Mux},
+		Timeout:   45 * time.Second,
+	}
+	res, err := panel.LoginWithClient(client, "http://agent.panel", entrance, s.PanelUser, s.PanelPass, "")
+	if err != nil {
+		log.Printf("switch login %s: %v", id, err)
+		http.Error(w, "auto login failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "mp_node",
 		Value:    id,
 		Path:     "/",
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/", http.StatusFound)
+
+	seen := map[string]bool{}
+	for _, c := range res.Cookies {
+		seen[c.Name] = true
+		setRemotePanelCookie(w, c.Name, c.Value, c.HttpOnly)
+	}
+	if entrance != "" && !seen["SecurityEntrance"] {
+		setRemotePanelCookie(w, "SecurityEntrance", base64.StdEncoding.EncodeToString([]byte(entrance)), true)
+	}
+
+	target := "/"
+	if entrance != "" {
+		target = "/" + strings.TrimPrefix(entrance, "/")
+	}
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
