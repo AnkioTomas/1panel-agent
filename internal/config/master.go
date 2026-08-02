@@ -27,7 +27,7 @@ type Master struct {
 	Entrance      string `json:"entrance"`
 	PanelUser     string `json:"panel_user"`
 	PanelPassword string `json:"panel_password"`
-	PublicHost    string `json:"public_host"` // shown in register command, e.g. 10.211.55.14
+	PublicHost    string `json:"public_host,omitempty"` // optional NAT override; default = request Host
 }
 
 func MasterPath() (string, error) {

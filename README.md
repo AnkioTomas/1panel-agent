@@ -29,21 +29,22 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/1pm ./cmd/1panel-agent
 自动读取 `/opt/1panel/db/core.db`：把本机 1Panel 挪到内部端口，Master 监听原端口并反代。
 
 ```bash
-# 唯一必须手写的：面板登录密码（core.db 里是哈希，读不出明文）
+# 唯一可能要手写的：面板明文密码（切换子节点预登录；DB 里是哈希）
 sudo ./bin/1pm master set --panel-pass 'your-password'
-
-sudo ./bin/1pm master   # 或 systemctl start 1pm-master
+sudo ./bin/1pm master
 ```
 
-| 来源 | 字段 |
-|------|------|
-| `core.db` 自动读 | 用户名、安全入口、端口 |
-| 自动生成/探测 | token、advertise host（局域网 IP） |
-| 仅 `master set` | **panel 明文密码**（切换子节点预登录用） |
+Master **不需要**配置：面板登录地址、对外 host、面板 API token。
 
-状态文件：`/var/lib/1pm/master.json`。systemd：`ExecStart=/usr/local/bin/1pm master`（禁止写密码）。
+| 项 | 怎么来的 |
+|----|----------|
+| 本机面板地址 | takeover → `127.0.0.1:内部端口` |
+| 安装命令里的 host | 你打开 `/__mp/` 时的 `Host` 头 |
+| 隧道 token | 自动生成；UI 可轮换（不是面板 token） |
+| 用户名 / 入口 / 端口 | `core.db` |
+| 面板密码 | 仅 `master set --panel-pass`（可选覆盖 `--host` 给 NAT） |
 
-Agent 安装脚本不提示、不要求设置——本机 `core.db` 自动探测。CLI 修改：`1pm master set --panel-pass ... [--host IP]`。
+systemd：`ExecStart=/usr/local/bin/1pm master`。
 
 管理页：`http://<master>:<原面板端口>/__mp/`（**需先登录本机 1Panel**；未登录会跳转安全入口）
 

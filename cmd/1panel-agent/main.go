@@ -238,15 +238,12 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `1pm — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  # only plaintext password cannot be read from core.db (hashed) — set once:
+  # Master needs no panel URL / host / panel-token.
+  # From core.db: user, entrance, port. Tunnel token: auto. Install host: browser Host.
+  # Only plaintext panel password (hashed in DB) for switch-login — set once:
   1pm master set --panel-pass PASS
-  # optional overrides: --host IP  --panel-user U  --token T
 
-  # run (systemd: ExecStart=/usr/local/bin/1pm master)
-  # auto from core.db: username, entrance, port; auto: token, LAN host
-  1pm master
-
-  # agent: no prompts — detects local 1Panel from core.db
+  1pm master                                          # systemd: ExecStart=/usr/local/bin/1pm master
   curl -fsSL "http://<master>:<port>/agent.sh?token=<TOKEN>" | sudo bash
 
 Master UI: http://<master>:<panel-port>/__mp/
