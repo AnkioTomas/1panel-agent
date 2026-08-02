@@ -29,19 +29,21 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/1pm ./cmd/1panel-agent
 自动读取 `/opt/1panel/db/core.db`：把本机 1Panel 挪到内部端口，Master 监听原端口并反代。
 
 ```bash
-sudo ./bin/1pm master \
-  --host 10.211.55.14 \
-  --token mp-tunnel-secret \
-  --panel-user ankio \
-  --panel-pass 'your-password'
+# 唯一必须手写的：面板登录密码（core.db 里是哈希，读不出明文）
+sudo ./bin/1pm master set --panel-pass 'your-password'
+
+sudo ./bin/1pm master   # 或 systemctl start 1pm-master
 ```
 
-| 参数 | 说明 |
+| 来源 | 字段 |
 |------|------|
-| `--host` | 给 Agent 复制注册命令用的对外 IP |
-| `--token` | Agent 接入密钥（可省略，自动生成并落盘） |
-| `--panel-user/pass` | 切换子节点时预登录用的 1Panel 账号 |
-| `--no-takeover` | 不挪动本机 1Panel（需自行 `--listen` / `--upstream`） |
+| `core.db` 自动读 | 用户名、安全入口、端口 |
+| 自动生成/探测 | token、advertise host（局域网 IP） |
+| 仅 `master set` | **panel 明文密码**（切换子节点预登录用） |
+
+状态文件：`/var/lib/1pm/master.json`。systemd：`ExecStart=/usr/local/bin/1pm master`（禁止写密码）。
+
+Agent 安装脚本不提示、不要求设置——本机 `core.db` 自动探测。CLI 修改：`1pm master set --panel-pass ... [--host IP]`。
 
 管理页：`http://<master>:<原面板端口>/__mp/`（**需先登录本机 1Panel**；未登录会跳转安全入口）
 
@@ -54,13 +56,13 @@ systemd 示例：[`deploy/systemd/1pm-master.service`](deploy/systemd/1pm-master
 ## Agent（推荐从 Master 一键安装）
 
 ```bash
-# 管理页复制，或直接执行（可重复执行以重置/重装）
-curl -fsSL "http://10.211.55.14:52045/agent.sh?token=mp-tunnel-secret" | sudo bash
+# 管理页「子节点安装命令」一键复制（含当前 Token）
+curl -fsSL "http://10.211.55.14:52045/agent.sh?token=<TOKEN>" | sudo bash
 ```
 
-脚本会下载 Master 同款 `1pm`、写入 systemd 并启动。也可手动：`1pm agent register host:port/token`。
+脚本会下载 Master 同款 `1pm`、写入 systemd 并启动。轮换 Token 后旧 Agent 需重新执行上述命令。
 
-systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)
+systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)（由安装脚本生成，勿硬编码 token）
 
 ## 使用
 

@@ -5,18 +5,8 @@ import (
 	"strings"
 )
 
-// DeviceIP returns the preferred advertise IP for UI display.
-func (s *Server) DeviceIP() string {
-	if s.PublicHost != "" {
-		host := s.PublicHost
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		host = strings.Trim(host, "[]")
-		if host != "" && host != "0.0.0.0" && host != "::" {
-			return host
-		}
-	}
+// DetectLANIP picks a non-loopback IPv4 suitable for Agent advertise.
+func DetectLANIP() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return ""
@@ -46,7 +36,6 @@ func (s *Server) DeviceIP() string {
 				continue
 			}
 			s := ip4.String()
-			// Prefer common private LAN ranges used by the lab.
 			if strings.HasPrefix(s, "10.") || strings.HasPrefix(s, "192.168.") || strings.HasPrefix(s, "172.") {
 				return s
 			}
@@ -56,4 +45,19 @@ func (s *Server) DeviceIP() string {
 		}
 	}
 	return fallback
+}
+
+// DeviceIP returns the preferred advertise IP for UI display.
+func (s *Server) DeviceIP() string {
+	if s.PublicHost != "" {
+		host := s.PublicHost
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.Trim(host, "[]")
+		if host != "" && host != "0.0.0.0" && host != "::" {
+			return host
+		}
+	}
+	return DetectLANIP()
 }

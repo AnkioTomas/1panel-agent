@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -18,6 +16,12 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "master":
+		if len(os.Args) >= 3 && os.Args[2] == "set" {
+			if err := runMasterSet(os.Args[3:]); err != nil {
+				fatal(err)
+			}
+			return
+		}
 		if err := runMaster(os.Args[2:]); err != nil {
 			fatal(err)
 		}
@@ -90,41 +94,71 @@ func runMaster(args []string) error {
 		}
 	}
 
-	if opts.Token == "" {
-		if st, err := config.LoadMaster(); err == nil && st.Token != "" {
-			opts.Token = st.Token
-		} else {
-			tok, err := randomToken()
-			if err != nil {
-				return err
-			}
-			opts.Token = tok
-			fmt.Fprintf(os.Stderr, "generated token: %s\n", opts.Token)
-		}
-	}
-	if opts.PanelUser == "" {
-		if st, err := config.LoadMaster(); err == nil {
-			opts.PanelUser = st.PanelUser
-			if opts.PanelPass == "" {
-				opts.PanelPass = st.PanelPassword
-			}
-		}
-	}
-
+	// State (token/host/creds) comes from /var/lib/1pm/master.json inside New.
+	// CLI flags are optional one-shot overrides; prefer: 1pm master set ...
 	srv, err := master.New(opts)
 	if err != nil {
 		return err
 	}
-	// persist credentials/token
-	st, _ := config.LoadMasterOrEmpty()
-	st.Token = srv.Token
-	st.PanelUser = srv.PanelUser
-	st.PanelPassword = srv.PanelPass
-	st.Entrance = srv.Entrance
-	st.PublicHost = srv.PublicHost
-	_ = config.SaveMaster(st)
-
 	return srv.Run()
+}
+
+func runMasterSet(args []string) error {
+	st, err := config.LoadMasterOrEmpty()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--host":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--host needs a value")
+			}
+			st.PublicHost = args[i]
+			changed = true
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			st.PanelUser = args[i]
+			changed = true
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			st.PanelPassword = args[i]
+			changed = true
+		case "--token":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--token needs a value")
+			}
+			st.Token = args[i]
+			changed = true
+		case "--entrance":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--entrance needs a value")
+			}
+			st.Entrance = args[i]
+			changed = true
+		default:
+			return fmt.Errorf("unknown master set flag: %s", args[i])
+		}
+	}
+	if !changed {
+		return fmt.Errorf("usage: 1pm master set [--host IP] [--panel-user U] [--panel-pass P] [--token T] [--entrance E]")
+	}
+	if err := config.SaveMaster(st); err != nil {
+		return err
+	}
+	path, _ := config.MasterPath()
+	fmt.Printf("master config saved: %s\n", path)
+	return nil
 }
 
 func runAgent(args []string) error {
@@ -200,27 +234,20 @@ func runAgentSet(args []string) error {
 	return nil
 }
 
-func randomToken() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
 func usage() {
 	fmt.Fprintf(os.Stderr, `1pm — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  1pm master --host 10.211.55.14 --token SECRET --panel-user USER --panel-pass PASS
-      # default: takeover local 1Panel port, reverse-proxy local panel, UI at /__mp/
+  # only plaintext password cannot be read from core.db (hashed) — set once:
+  1pm master set --panel-pass PASS
+  # optional overrides: --host IP  --panel-user U  --token T
 
-  # preferred: on agent host
-  curl -fsSL "http://<master>:<port>/agent.sh?token=SECRET" | sudo bash
+  # run (systemd: ExecStart=/usr/local/bin/1pm master)
+  # auto from core.db: username, entrance, port; auto: token, LAN host
+  1pm master
 
-  1pm agent register host:port/token
-  1pm agent set --panel-url http://127.0.0.1:52045 --panel-user U --panel-pass P
-  1pm agent run
+  # agent: no prompts — detects local 1Panel from core.db
+  curl -fsSL "http://<master>:<port>/agent.sh?token=<TOKEN>" | sudo bash
 
 Master UI: http://<master>:<panel-port>/__mp/
 `)

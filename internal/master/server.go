@@ -49,25 +49,47 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	dirty := false
 	if opts.Token != "" {
 		state.Token = opts.Token
-	}
-	if opts.PanelUser != "" {
-		state.PanelUser = opts.PanelUser
+		dirty = true
 	}
 	if opts.PanelPass != "" {
 		state.PanelPassword = opts.PanelPass
+		dirty = true
 	}
 	if opts.PublicHost != "" {
 		state.PublicHost = opts.PublicHost
+		dirty = true
 	}
 	if opts.Entrance != "" {
 		state.Entrance = opts.Entrance
+		dirty = true
+	}
+	// CLI --panel-user is override only; default source is core.db (below).
+	if opts.PanelUser != "" {
+		state.PanelUser = opts.PanelUser
+		dirty = true
 	}
 
 	listen := opts.Listen
 	localPanel := opts.LocalPanel
 	entrance := state.Entrance
+
+	// Sync what 1Panel already knows — never ask the user to re-type these.
+	if st, err := panel.ReadSettings(opts.DBPath); err == nil {
+		if opts.PanelUser == "" && st.UserName != "" && state.PanelUser != st.UserName {
+			state.PanelUser = st.UserName
+			dirty = true
+		}
+		if opts.Entrance == "" && st.SecurityEntrance != "" {
+			entrance = st.SecurityEntrance
+			if state.Entrance != entrance {
+				state.Entrance = entrance
+				dirty = true
+			}
+		}
+	}
 
 	if opts.Takeover {
 		pub, internal, ent, err := EnsureTakeover(opts.DBPath, state)
@@ -81,11 +103,23 @@ func New(opts Options) (*Server, error) {
 		if localPanel == "" {
 			localPanel = panel.LocalPanelURL(internal)
 		}
-		_ = config.SaveMaster(state)
+		dirty = true
 	}
 
 	if state.Token == "" {
-		return nil, fmt.Errorf("token required")
+		tok, err := config.GenerateToken()
+		if err != nil {
+			return nil, err
+		}
+		state.Token = tok
+		dirty = true
+		log.Printf("generated install token (rotate anytime in /__mp/)")
+	}
+	if dirty {
+		_ = config.SaveMaster(state)
+	}
+	if state.PanelPassword == "" {
+		log.Printf("warn: panel password not set — run: 1pm master set --panel-pass PASS (needed for node switch login)")
 	}
 	if listen == "" {
 		listen = ":8080"
@@ -172,7 +206,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
-	if token == "" || token != s.Token {
+	if !s.tokenOK(token) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -515,25 +549,32 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 	<-errc
 }
 
-// AdvertiseHost returns host:port for agent register command.
+// listenPort returns the port Master is bound to.
+func (s *Server) listenPort() string {
+	_, port, _ := net.SplitHostPort(s.Listen)
+	if port != "" {
+		return port
+	}
+	if strings.HasPrefix(s.Listen, ":") {
+		return strings.TrimPrefix(s.Listen, ":")
+	}
+	return "80"
+}
+
+// AdvertiseHost returns host:port for the agent install command.
+// Prefer the Host the browser actually used; PublicHost is an optional override (NAT).
 func (s *Server) AdvertiseHost(r *http.Request) string {
 	if s.PublicHost != "" {
 		if strings.Contains(s.PublicHost, ":") {
 			return s.PublicHost
 		}
-		_, port, _ := net.SplitHostPort(s.Listen)
-		if port == "" {
-			if strings.HasPrefix(s.Listen, ":") {
-				port = strings.TrimPrefix(s.Listen, ":")
-			} else {
-				port = "80"
-			}
-		}
-		return s.PublicHost + ":" + port
+		return s.PublicHost + ":" + s.listenPort()
 	}
-	host := r.Host
-	if host == "" {
-		host = s.Listen
+	if r != nil && r.Host != "" {
+		return r.Host
 	}
-	return host
+	if ip := DetectLANIP(); ip != "" {
+		return ip + ":" + s.listenPort()
+	}
+	return s.Listen
 }

@@ -20,8 +20,8 @@ const (
 )
 
 func (s *Server) authSecret() string {
-	// Token doubles as HMAC secret; never expose in UI.
-	return s.Token
+	// Token doubles as HMAC secret; never expose raw in UI.
+	return s.currentToken()
 }
 
 func (s *Server) issueAuthCookie(w http.ResponseWriter) {

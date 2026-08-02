@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HOME=/root
-# Prefer one-shot install from Master:
-#   curl -fsSL "http://<master>:<port>/agent.sh?token=<token>" | sudo bash
-ExecStart=/usr/local/bin/1pm agent register 10.211.55.14:52045/mp-tunnel-secret
+# This unit is written by Master /agent.sh — do not hardcode token here.
+# Install: curl -fsSL "http://<master>:<port>/agent.sh?token=<token>" | sudo bash
+ExecStart=/usr/local/bin/1pm agent run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535

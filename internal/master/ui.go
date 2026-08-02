@@ -20,7 +20,7 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if path == "/api/agents" || path == "/api/upgrade-check" {
+	if path == "/api/agents" || path == "/api/upgrade-check" || path == "/api/rotate-token" {
 		if !s.validAuthCookie(r) && !s.localPanelLoggedIn(r) {
 			s.denyAPI(w, "unauthorized")
 			return
@@ -28,11 +28,14 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 		if !s.validAuthCookie(r) {
 			s.issueAuthCookie(w)
 		}
-		if path == "/api/upgrade-check" {
+		switch path {
+		case "/api/upgrade-check":
 			s.handleUpgradeCheck(w, r)
-			return
+		case "/api/rotate-token":
+			s.handleRotateToken(w, r)
+		default:
+			s.apiAgents(w, r)
 		}
-		s.apiAgents(w, r)
 		return
 	}
 	if !s.requireMPAuth(w, r) {
@@ -82,7 +85,6 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 type pageData struct {
 	Agents        []AgentInfo
 	Register      string
-	Token         string
 	Host          string
 	DeviceIP      string
 	Entrance      string
@@ -97,7 +99,6 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	data := pageData{
 		Agents:        agents,
 		Register:      s.InstallCommand(r),
-		Token:         s.Token,
 		Host:          host,
 		DeviceIP:      s.DeviceIP(),
 		Entrance:      s.Entrance,
@@ -249,13 +250,16 @@ tr:last-child td{border-bottom:0}
   </div>
 
   <div class="card">
-    <div class="card-hd"><h2>子节点安装命令</h2></div>
+    <div class="card-hd">
+      <h2>子节点安装命令</h2>
+      <button class="btn plain" type="button" id="btnRotate" onclick="rotateToken()">轮换 Token</button>
+    </div>
     <div class="card-bd">
       <div class="cmd">
         <code id="reg">{{.Register}}</code>
         <button class="btn" type="button" onclick="copyReg()">复制命令</button>
       </div>
-      <p class="meta">在子节点以 root 执行。可重复执行以重置/重装 Agent。Token 已包含在命令中{{if .Entrance}} · 安全入口 {{.Entrance}}{{end}}</p>
+      <p class="meta">Token 自动生成并写入 master.json；轮换后旧 Agent 需重新执行安装命令。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
     </div>
   </div>
 
@@ -328,6 +332,25 @@ function copyReg(){
     const el=document.getElementById('toast');
     el.classList.add('show');
     setTimeout(()=>el.classList.remove('show'),1200);
+  });
+}
+function rotateToken(){
+  if(!confirm('轮换后旧安装命令与已注册 Agent 立即失效，需重新 curl|bash。继续？')) return;
+  const btn=document.getElementById('btnRotate');
+  btn.disabled=true; btn.textContent='轮换中…';
+  fetch('/__mp/api/rotate-token',{method:'POST',credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(data=>{
+    if(data.install) document.getElementById('reg').textContent=data.install;
+    const el=document.getElementById('toast');
+    el.textContent='Token 已轮换';
+    el.classList.add('show');
+    setTimeout(()=>{el.classList.remove('show'); el.textContent='复制成功';},1500);
+  }).catch(e=>{
+    alert('轮换失败: '+e.message);
+  }).finally(()=>{
+    btn.disabled=false; btn.textContent='轮换 Token';
   });
 }
 function updText(status, latest){

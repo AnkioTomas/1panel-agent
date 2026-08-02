@@ -5,7 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/1pm master --host 10.211.55.14 --token mp-tunnel-secret --panel-user ankio --panel-pass ankio@2026.8
+# State: /var/lib/1pm/master.json (tunnel token auto; panel user/entrance from core.db).
+# Only secret you may need once: 1pm master set --panel-pass P
+# Do NOT put secrets on ExecStart.
+ExecStart=/usr/local/bin/1pm master
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65535

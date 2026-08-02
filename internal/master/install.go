@@ -11,7 +11,7 @@ import (
 
 func (s *Server) requireInstallToken(w http.ResponseWriter, r *http.Request) bool {
 	tok := r.URL.Query().Get("token")
-	if tok == "" || tok != s.Token {
+	if !s.tokenOK(tok) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
@@ -37,7 +37,7 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	}{
 		Base:   base,
 		Master: host,
-		Token:  s.Token,
+		Token:  s.currentToken(),
 		GOOS:   runtime.GOOS,
 		GOARCH: runtime.GOARCH,
 	}
@@ -84,7 +84,7 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 // InstallCommand returns the one-liner shown in Master UI.
 func (s *Server) InstallCommand(r *http.Request) string {
 	host := s.AdvertiseHost(r)
-	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?token=%s" | sudo bash`, host, s.Token)
+	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?token=%s" | sudo bash`, host, s.currentToken())
 }
 
 var agentInstallTmpl = template.Must(template.New("agent.sh").Parse(strings.TrimSpace(`
