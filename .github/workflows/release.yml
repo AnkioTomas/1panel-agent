@@ -89,7 +89,7 @@ jobs:
             curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo INSTALL_CDN=cn bash
             ```
 
-            Optional: `PANEL_PASS='...'` `VERSION=vX.Y.Z`
+            Optional: `INSTALL_CDN=cn` `VERSION=vX.Y.Z`
           files: |
             dist/1pm_*
             dist/install.sh

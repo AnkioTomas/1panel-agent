@@ -2,19 +2,16 @@
 # 1pm Master one-click installer
 # Usage:
 #   curl -fsSL <script-url> | sudo bash
-#   curl -fsSL <script-url> | sudo PANEL_PASS='xxx' bash
 #   curl -fsSL <script-url> | sudo INSTALL_CDN=cn VERSION=v0.0.1 bash
 #
 # INSTALL_CDN:  auto (default) | global | cn
 # VERSION:      empty = latest GitHub release
-# PANEL_PASS:   optional; enables node-switch auto-login
 # REPO:         AnkioTomas/1panel-agent
 set -euo pipefail
 
 REPO="${REPO:-AnkioTomas/1panel-agent}"
 INSTALL_CDN="${INSTALL_CDN:-auto}"
 VERSION="${VERSION:-}"
-PANEL_PASS="${PANEL_PASS:-}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/1pm}"
 UNIT_PATH="${UNIT_PATH:-/etc/systemd/system/1pm-master.service}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
@@ -228,23 +225,78 @@ WantedBy=multi-user.target
 EOF
 }
 
-maybe_set_password() {
-  if [[ -n "$PANEL_PASS" ]]; then
-    log "save panel password for node-switch login"
-    "$BIN_PATH" master set --panel-pass "$PANEL_PASS"
-    return
+# Read key=value from master.json without requiring jq.
+json_str() {
+  local key="$1" file="$2"
+  [[ -f "$file" ]] || return 0
+  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$file" | head -n1
+}
+
+json_num() {
+  local key="$1" file="$2"
+  [[ -f "$file" ]] || return 0
+  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p" "$file" | head -n1
+}
+
+detect_lan_ip() {
+  local ip
+  ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+  if [[ -z "$ip" ]]; then
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   fi
-  if [[ -t 0 ]]; then
-    local pass
-    read -r -s -p "Panel password for node-switch login (Enter to skip): " pass
-    echo
-    if [[ -n "$pass" ]]; then
-      "$BIN_PATH" master set --panel-pass "$pass"
-    else
-      warn "skipped — later: 1pm master set --panel-pass PASS"
-    fi
+  echo "${ip:-<本机IP>}"
+}
+
+print_next_steps() {
+  local ver="$1" state="/var/lib/1pm/master.json"
+  local host port entrance ui agent_hint
+  # give master a moment to write master.json after takeover
+  local i
+  for i in 1 2 3 4 5; do
+    [[ -f "$state" ]] && break
+    sleep 1
+  done
+
+  host="$(json_str public_host "$state")"
+  [[ -z "$host" ]] && host="$(detect_lan_ip)"
+  port="$(json_num original_port "$state")"
+  [[ -z "$port" ]] && port="<面板端口>"
+  entrance="$(json_str entrance "$state")"
+
+  if [[ -n "$entrance" ]]; then
+    ui="http://${host}:${port}/${entrance}"
   else
-    warn "no PANEL_PASS and no TTY — later: 1pm master set --panel-pass PASS"
+    ui="http://${host}:${port}/"
+  fi
+  agent_hint="http://${host}:${port}/__mp/"
+
+  echo
+  echo "========================================"
+  echo " 1pm Master 安装完成 (${ver})"
+  echo "========================================"
+  echo
+  echo "接下来请按顺序操作："
+  echo
+  echo "  1) 浏览器打开本机 1Panel 并登录"
+  echo "     ${ui}"
+  echo
+  echo "  2) 登录后打开多机管理页"
+  echo "     ${agent_hint}"
+  echo "     （侧边栏「多机节点」也可进入）"
+  echo
+  echo "  3) 在管理页复制「子节点安装命令」"
+  echo "     到每台 Agent 机器以 root 执行（curl | bash）"
+  echo
+  echo "  4) 子节点上线后，点「进入面板」切换；"
+  echo "     子节点 1Panel 自己处理登录"
+  echo
+  echo "常用命令："
+  echo "  systemctl status 1pm-master"
+  echo "  journalctl -u 1pm-master -f"
+  echo "  # 升级/重装：重新执行本安装脚本即可"
+  echo
+  if ! systemctl is-active --quiet 1pm-master.service; then
+    warn "服务未处于 active，请检查: journalctl -u 1pm-master -e"
   fi
 }
 
@@ -252,7 +304,7 @@ main() {
   need_root
   have_cmd systemctl || die "systemd required"
 
-  local os arch tag asset base tmpdir
+  local os arch tag asset base tmpdir ver
   os="$(detect_os)"
   arch="$(detect_arch)"
   asset="1pm_${os}_${arch}"
@@ -270,18 +322,15 @@ main() {
   systemctl stop 1pm-master.service 2>/dev/null || true
   install -m 755 "$tmpdir/$asset" "$BIN_PATH"
   write_unit
-  maybe_set_password
 
   systemctl daemon-reload
   systemctl enable 1pm-master.service
   systemctl restart 1pm-master.service
+  sleep 1
 
-  log "installed $($BIN_PATH version 2>/dev/null || echo "$tag") -> $BIN_PATH"
-  systemctl --no-pager --full status 1pm-master.service || true
-  echo
-  log "UI: http://<this-host>:<1panel-port>/__mp/  (login 1Panel first)"
-  log "agent install command is shown on that page"
-  log "re-run this script anytime to upgrade/reinstall"
+  ver="$("$BIN_PATH" version 2>/dev/null || echo "$tag")"
+  log "installed ${ver} -> $BIN_PATH"
+  print_next_steps "$ver"
 }
 
 main "$@"

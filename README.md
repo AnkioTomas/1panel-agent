@@ -50,31 +50,19 @@ curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/release
   | sudo INSTALL_CDN=cn bash
 ```
 
-可选环境变量：
+可选环境变量：`INSTALL_CDN=auto|global|cn`、`VERSION=v0.0.1`。
 
-| 变量 | 说明 |
-|------|------|
-| `INSTALL_CDN=auto\|global\|cn` | 下载源（默认 auto：先 GitHub 再国内镜像） |
-| `PANEL_PASS='...'` | 写入节点切换预登录密码 |
-| `VERSION=v0.0.1` | 指定版本（默认 latest） |
-
-```bash
-curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh \
-  | sudo INSTALL_CDN=cn PANEL_PASS='your-password' bash
-```
-
-脚本会：下载对应 arch 二进制 → 校验 checksum → 安装 systemd → `enable --now`。  
-自动读取 `core.db`（用户名/入口/端口）；接管本机 1Panel 端口并反代。
-
-Master **不需要**配置：面板登录地址、对外 host、面板 API token。
+脚本会：下载二进制 → 校验 checksum → 装 systemd → `enable --now`。  
+**不需要**面板密码 / 登录地址 / host / API token。
 
 | 项 | 怎么来的 |
 |----|----------|
 | 本机面板地址 | takeover → `127.0.0.1:内部端口` |
-| 安装命令里的 host | 你打开 `/__mp/` 时的 `Host` 头 |
-| 隧道 token | 自动生成；UI 可轮换（不是面板 token） |
-| 用户名 / 入口 / 端口 | `core.db` |
-| 面板密码 | 仅 `master set --panel-pass`（可选覆盖 `--host` 给 NAT） |
+| 安装命令里的 host | 打开 `/__mp/` 时的 `Host` |
+| 隧道 token | 自动生成；UI 可轮换 |
+| 入口 / 端口 | `core.db` |
+| `/__mp/` 鉴权 | 浏览器现有本机 1Panel 登录态 → `mp_auth`；不存密码 |
+| 切换子节点 | 只设 `mp_node`；远端登录/入口由子节点 1Panel（经 Agent 反代）自己处理 |
 
 systemd：`ExecStart=/usr/local/bin/1pm master`。
 

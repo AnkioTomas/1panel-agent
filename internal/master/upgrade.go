@@ -1,12 +1,11 @@
 package master
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -54,7 +53,7 @@ func (s *Server) handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	latest, err := s.fetchPanelLatestVersion()
+	latest, err := s.fetchPanelLatestVersion(r)
 	if err != nil {
 		out.Message = err.Error()
 		out.MasterStatus = "unknown"
@@ -82,44 +81,28 @@ func (s *Server) handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) fetchPanelLatestVersion() (string, error) {
+func (s *Server) fetchPanelLatestVersion(r *http.Request) (string, error) {
 	if s.LocalPanel == "" {
 		return "", fmt.Errorf("local panel not configured")
 	}
-	if s.PanelUser == "" || s.PanelPass == "" {
-		return "", fmt.Errorf("panel user/password not configured")
-	}
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return "", err
-	}
-	client := &http.Client{
-		Jar:     jar,
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	res, err := panel.LoginWithClient(client, s.LocalPanel, s.Entrance, s.PanelUser, s.PanelPass, "")
-	if err != nil {
-		return "", fmt.Errorf("login local panel: %w", err)
-	}
-	base, _ := url.Parse(strings.TrimRight(s.LocalPanel, "/"))
-	jar.SetCookies(base, res.Cookies)
-
+	// Reuse the caller's 1Panel session — no master-stored password.
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(s.LocalPanel, "/")+"/api/v2/core/settings/upgrade", nil)
 	if err != nil {
 		return "", err
 	}
-	if s.Entrance != "" {
-		// EntranceCode not always required after session login; keep if panel still checks.
+	if cookie := r.Header.Get("Cookie"); cookie != "" {
+		req.Header.Set("Cookie", cookie)
 	}
+	if s.Entrance != "" {
+		req.Header.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(s.Entrance)))
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var ar struct {
 		Code    int             `json:"code"`
 		Message string          `json:"message"`

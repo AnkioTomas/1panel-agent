@@ -5,9 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# State: /var/lib/1pm/master.json (tunnel token auto; panel user/entrance from core.db).
-# Only secret you may need once: 1pm master set --panel-pass P
-# Do NOT put secrets on ExecStart.
+# State: /var/lib/1pm/master.json (tunnel token auto; user/entrance from core.db).
 ExecStart=/usr/local/bin/1pm master
 Restart=on-failure
 RestartSec=3

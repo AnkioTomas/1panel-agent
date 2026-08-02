@@ -21,13 +21,15 @@ func GenerateToken() (string, error) {
 const masterFileName = "master.json"
 
 type Master struct {
-	Token         string `json:"token"`
-	OriginalPort  int    `json:"original_port"`
-	InternalPort  int    `json:"internal_port"`
-	Entrance      string `json:"entrance"`
-	PanelUser     string `json:"panel_user"`
-	PanelPassword string `json:"panel_password"`
-	PublicHost    string `json:"public_host,omitempty"` // optional NAT override; default = request Host
+	Token        string `json:"token"`
+	OriginalPort int    `json:"original_port"`
+	InternalPort int    `json:"internal_port"`
+	Entrance     string `json:"entrance"`
+	PublicHost   string `json:"public_host,omitempty"` // optional NAT override; default = request Host
+
+	// Legacy fields cleared on load; kept so old master.json still unmarshals.
+	PanelUser     string `json:"panel_user,omitempty"`
+	PanelPassword string `json:"panel_password,omitempty"`
 }
 
 func MasterPath() (string, error) {

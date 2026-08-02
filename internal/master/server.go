@@ -25,8 +25,6 @@ type Server struct {
 	Token      string
 	PublicHost string
 	Entrance   string
-	PanelUser  string
-	PanelPass  string
 	LocalPanel string // http://127.0.0.1:internal
 	reg        *Registry
 	localProxy *httputil.ReverseProxy
@@ -37,8 +35,6 @@ type Options struct {
 	Token      string
 	PublicHost string
 	Entrance   string
-	PanelUser  string
-	PanelPass  string
 	LocalPanel string
 	Takeover   bool
 	DBPath     string
@@ -54,10 +50,6 @@ func New(opts Options) (*Server, error) {
 		state.Token = opts.Token
 		dirty = true
 	}
-	if opts.PanelPass != "" {
-		state.PanelPassword = opts.PanelPass
-		dirty = true
-	}
 	if opts.PublicHost != "" {
 		state.PublicHost = opts.PublicHost
 		dirty = true
@@ -66,9 +58,10 @@ func New(opts Options) (*Server, error) {
 		state.Entrance = opts.Entrance
 		dirty = true
 	}
-	// CLI --panel-user is override only; default source is core.db (below).
-	if opts.PanelUser != "" {
-		state.PanelUser = opts.PanelUser
+	// Drop legacy password fields — Master never stores panel credentials.
+	if state.PanelUser != "" || state.PanelPassword != "" {
+		state.PanelUser = ""
+		state.PanelPassword = ""
 		dirty = true
 	}
 
@@ -76,12 +69,8 @@ func New(opts Options) (*Server, error) {
 	localPanel := opts.LocalPanel
 	entrance := state.Entrance
 
-	// Sync what 1Panel already knows — never ask the user to re-type these.
+	// Sync entrance from core.db (source of truth).
 	if st, err := panel.ReadSettings(opts.DBPath); err == nil {
-		if opts.PanelUser == "" && st.UserName != "" && state.PanelUser != st.UserName {
-			state.PanelUser = st.UserName
-			dirty = true
-		}
 		if opts.Entrance == "" && st.SecurityEntrance != "" {
 			entrance = st.SecurityEntrance
 			if state.Entrance != entrance {
@@ -118,9 +107,6 @@ func New(opts Options) (*Server, error) {
 	if dirty {
 		_ = config.SaveMaster(state)
 	}
-	if state.PanelPassword == "" {
-		log.Printf("warn: panel password not set — run: 1pm master set --panel-pass PASS (needed for node switch login)")
-	}
 	if listen == "" {
 		listen = ":8080"
 	}
@@ -133,8 +119,6 @@ func New(opts Options) (*Server, error) {
 		Token:      state.Token,
 		PublicHost: state.PublicHost,
 		Entrance:   entrance,
-		PanelUser:  state.PanelUser,
-		PanelPass:  state.PanelPassword,
 		LocalPanel: localPanel,
 		reg:        NewRegistry(),
 	}

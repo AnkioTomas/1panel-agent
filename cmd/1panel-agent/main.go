@@ -68,18 +68,6 @@ func runMaster(args []string) error {
 				return fmt.Errorf("--host needs a value")
 			}
 			opts.PublicHost = args[i]
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			opts.PanelUser = args[i]
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			opts.PanelPass = args[i]
 		case "--entrance":
 			i++
 			if i >= len(args) {
@@ -99,8 +87,6 @@ func runMaster(args []string) error {
 		}
 	}
 
-	// State (token/host/creds) comes from /var/lib/1pm/master.json inside New.
-	// CLI flags are optional one-shot overrides; prefer: 1pm master set ...
 	srv, err := master.New(opts)
 	if err != nil {
 		return err
@@ -123,20 +109,6 @@ func runMasterSet(args []string) error {
 			}
 			st.PublicHost = args[i]
 			changed = true
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			st.PanelUser = args[i]
-			changed = true
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			st.PanelPassword = args[i]
-			changed = true
 		case "--token":
 			i++
 			if i >= len(args) {
@@ -156,7 +128,7 @@ func runMasterSet(args []string) error {
 		}
 	}
 	if !changed {
-		return fmt.Errorf("usage: 1pm master set [--host IP] [--panel-user U] [--panel-pass P] [--token T] [--entrance E]")
+		return fmt.Errorf("usage: 1pm master set [--host IP] [--token T] [--entrance E]")
 	}
 	if err := config.SaveMaster(st); err != nil {
 		return err
@@ -243,17 +215,12 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `1pm %s — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  # Master needs no panel URL / host / panel-token.
-  # From core.db: user, entrance, port. Tunnel token: auto. Install host: browser Host.
-  # Only plaintext panel password (hashed in DB) for switch-login — set once:
-  1pm master set --panel-pass PASS
-
   1pm master                                          # systemd: ExecStart=/usr/local/bin/1pm master
   curl -fsSL "http://<master>:<port>/agent.sh?token=<TOKEN>" | sudo bash
-
   1pm version
 
 Master UI: http://<master>:<panel-port>/__mp/
+  Auth = your 1Panel browser session (no password stored by 1pm).
 `, version)
 }
 
