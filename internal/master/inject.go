@@ -74,7 +74,7 @@ function findCollapseRoot(trigger){
 
 function labelParts(agents){
   var id=currentID();
-  if(!id) return {title:"本机", ip:(MASTER_IP && MASTER_IP!=="-") ? MASTER_IP : ""};
+  if(!id) return {title:"主节点", ip:(MASTER_IP && MASTER_IP!=="-") ? MASTER_IP : ""};
   for(var i=0;i<(agents||[]).length;i++){
     if(agents[i].id===id){
       var a=agents[i];
@@ -109,7 +109,7 @@ function renderPop(btn, agents){
   pop.id="mp-node-pop";
   var id=currentID();
   var html="";
-  html+='<div class="mp-ns-item'+(id?"":" is-active")+'" data-mp="local"><span>本机</span>'+(MASTER_IP&&MASTER_IP!=="-"?'<span class="mp-ns-sub">'+MASTER_IP+"</span>":"")+"</div>";
+  html+='<div class="mp-ns-item'+(id?"":" is-active")+'" data-mp="local"><span>主节点</span>'+(MASTER_IP&&MASTER_IP!=="-"?'<span class="mp-ns-sub">'+MASTER_IP+"</span>":"")+"</div>";
   if(!agents || !agents.length){
     html+='<div class="mp-ns-empty">暂无在线 Agent</div>';
   } else {
@@ -166,7 +166,7 @@ function bindSwitch(btn){
     var p=labelParts(agents);
     var title=btn.querySelector(".mp-ns-title");
     var ip=btn.querySelector(".mp-ns-ip");
-    if(title) title.textContent=p.title||"本机";
+    if(title) title.textContent=p.title||"主节点";
     if(ip){
       if(p.ip){ ip.textContent=p.ip; ip.style.display=""; }
       else { ip.textContent=""; ip.style.display="none"; }
