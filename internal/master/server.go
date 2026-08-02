@@ -124,6 +124,8 @@ func New(opts Options) (*Server, error) {
 func (s *Server) Run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
+	mux.HandleFunc("/agent.sh", s.handleAgentScript)
+	mux.HandleFunc("/agent.bin", s.handleAgentBinary)
 	mux.HandleFunc("/__mp/", s.handleMP)
 	mux.HandleFunc("/n/", s.handleProxy)
 	mux.HandleFunc("/", s.handleRoot)

@@ -215,6 +215,9 @@ Usage:
   1pm master --host 10.211.55.14 --token SECRET --panel-user USER --panel-pass PASS
       # default: takeover local 1Panel port, reverse-proxy local panel, UI at /__mp/
 
+  # preferred: on agent host
+  curl -fsSL "http://<master>:<port>/agent.sh?token=SECRET" | sudo bash
+
   1pm agent register host:port/token
   1pm agent set --panel-url http://127.0.0.1:52045 --panel-user U --panel-pass P
   1pm agent run

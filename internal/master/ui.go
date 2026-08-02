@@ -96,7 +96,7 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	agents := s.reg.List()
 	data := pageData{
 		Agents:        agents,
-		Register:      "1pm agent register " + host + "/" + s.Token,
+		Register:      s.InstallCommand(r),
 		Token:         s.Token,
 		Host:          host,
 		DeviceIP:      s.DeviceIP(),
@@ -249,13 +249,13 @@ tr:last-child td{border-bottom:0}
   </div>
 
   <div class="card">
-    <div class="card-hd"><h2>子节点注册命令</h2></div>
+    <div class="card-hd"><h2>子节点安装命令</h2></div>
     <div class="card-bd">
       <div class="cmd">
         <code id="reg">{{.Register}}</code>
         <button class="btn" type="button" onclick="copyReg()">复制命令</button>
       </div>
-      <p class="meta">在 Agent 机器执行。Token 已包含在命令中{{if .Entrance}} · 安全入口 {{.Entrance}}{{end}}</p>
+      <p class="meta">在子节点以 root 执行。可重复执行以重置/重装 Agent。Token 已包含在命令中{{if .Entrance}} · 安全入口 {{.Entrance}}{{end}}</p>
     </div>
   </div>
 

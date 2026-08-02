@@ -51,24 +51,23 @@ sudo ./bin/1pm master \
 
 systemd 示例：[`deploy/systemd/1pm-master.service`](deploy/systemd/1pm-master.service)
 
-## Agent
+## Agent（推荐从 Master 一键安装）
 
 ```bash
-# 可选：显式指定本机面板（默认会读 core.db）
-sudo 1pm agent set --panel-url http://127.0.0.1:52045 --entrance tomas
-
-# 注册并前台运行（命令可在 Master UI 一键复制）
-sudo 1pm agent register 10.211.55.14:52045/mp-tunnel-secret
+# 管理页复制，或直接执行（可重复执行以重置/重装）
+curl -fsSL "http://10.211.55.14:52045/agent.sh?token=mp-tunnel-secret" | sudo bash
 ```
+
+脚本会下载 Master 同款 `1pm`、写入 systemd 并启动。也可手动：`1pm agent register host:port/token`。
 
 systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)
 
 ## 使用
 
 1. 打开 `http://master:端口/__mp/`
-2. 复制「子节点注册命令」到 Agent 机器执行
+2. 复制「子节点注册命令」到 Agent 机器执行（`curl … | sudo bash`）
 3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点；远程会话存在 `mp_r_*` cookie，**不会覆盖**本机 `psession`
-4. 点「切换回本机 1Panel」只清除 `mp_node`，本机登录态保留，无需重新登录
+4. 点「切换回主节点 1Panel」只清除 `mp_node`，主节点登录态保留，无需重新登录
 
 ## 实验室验证（已通过）
 
