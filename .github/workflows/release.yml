@@ -65,7 +65,9 @@ jobs:
             echo ">> ${os}/${arch}"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="$ldflags" -o "$out" ./cmd/1panel-agent
           done
-          (cd dist && sha256sum 1pm_* > checksums.txt)
+          cp install.sh dist/install.sh
+          chmod +x dist/install.sh
+          (cd dist && sha256sum 1pm_* install.sh > checksums.txt)
           ls -la dist
 
       - name: Create GitHub Release
@@ -74,8 +76,23 @@ jobs:
           tag_name: ${{ steps.ver.outputs.version }}
           name: ${{ steps.ver.outputs.version }}
           generate_release_notes: true
+          body: |
+            ## Install Master
+
+            **Global**
+            ```bash
+            curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
+            ```
+
+            **China CDN**
+            ```bash
+            curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo INSTALL_CDN=cn bash
+            ```
+
+            Optional: `PANEL_PASS='...'` `VERSION=vX.Y.Z`
           files: |
             dist/1pm_*
+            dist/install.sh
             dist/checksums.txt
           fail_on_unmatched_files: true
         env:

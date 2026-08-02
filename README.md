@@ -35,15 +35,36 @@ git push origin v0.1.0
 
 也可在 Actions 里手动跑 **Release** workflow。
 
-## Master（需 root）
+## Master 一键安装（需 root）
 
-自动读取 `/opt/1panel/db/core.db`：把本机 1Panel 挪到内部端口，Master 监听原端口并反代。
+**海外**
 
 ```bash
-# 唯一可能要手写的：面板明文密码（切换子节点预登录；DB 里是哈希）
-sudo ./bin/1pm master set --panel-pass 'your-password'
-sudo ./bin/1pm master
+curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
 ```
+
+**国内 CDN**
+
+```bash
+curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh \
+  | sudo INSTALL_CDN=cn bash
+```
+
+可选环境变量：
+
+| 变量 | 说明 |
+|------|------|
+| `INSTALL_CDN=auto\|global\|cn` | 下载源（默认 auto：先 GitHub 再国内镜像） |
+| `PANEL_PASS='...'` | 写入节点切换预登录密码 |
+| `VERSION=v0.0.1` | 指定版本（默认 latest） |
+
+```bash
+curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh \
+  | sudo INSTALL_CDN=cn PANEL_PASS='your-password' bash
+```
+
+脚本会：下载对应 arch 二进制 → 校验 checksum → 安装 systemd → `enable --now`。  
+自动读取 `core.db`（用户名/入口/端口）；接管本机 1Panel 端口并反代。
 
 Master **不需要**配置：面板登录地址、对外 host、面板 API token。
 
