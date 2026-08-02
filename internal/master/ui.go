@@ -9,13 +9,35 @@ import (
 
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
+	// Bootstrap: issue mp_auth when local 1Panel session is valid.
+	if path == "/touch" {
+		if s.localPanelLoggedIn(r) {
+			s.issueAuthCookie(w)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if path == "/api/agents" {
+		if !s.validAuthCookie(r) && !s.localPanelLoggedIn(r) {
+			s.denyAPI(w, "unauthorized")
+			return
+		}
+		if !s.validAuthCookie(r) {
+			s.issueAuthCookie(w)
+		}
+		s.apiAgents(w, r)
+		return
+	}
+	if !s.requireMPAuth(w, r) {
+		return
+	}
 	if path == "" || path == "/" {
 		s.renderNodes(w, r)
 		return
 	}
 	switch {
-	case path == "/api/agents":
-		s.apiAgents(w, r)
 	case path == "/local":
 		s.handleLocal(w, r)
 	case strings.HasPrefix(path, "/go/"):
@@ -104,7 +126,7 @@ a.link{color:#93c5fd}
 <body>
 <div class="wrap">
   <h1>1Panel 多机节点</h1>
-  <p class="sub">Master 网关已接管面板端口；本地面板反代中。Agent 经 WebSocket 接入后可一键切换并预登录。</p>
+  <p class="sub">需先登录本机 1Panel。左侧菜单「多机节点」进入本页；Agent 接入后可一键切换并预登录。</p>
 
   <div class="card">
     <h2>子节点注册命令</h2>

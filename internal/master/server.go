@@ -113,6 +113,10 @@ func New(opts Options) (*Server, error) {
 		s.localProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			http.Error(w, "local 1Panel unavailable: "+err.Error(), http.StatusBadGateway)
 		}
+		s.wrapLocalProxy()
+	}
+	if err := InjectSidebarMenu(opts.DBPath); err != nil {
+		log.Printf("warn: inject sidebar menu: %v", err)
 	}
 	return s, nil
 }
@@ -279,12 +283,12 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 		return
 	}
 
-	body := io.Reader(http.NoBody)
+	reqBody := io.Reader(http.NoBody)
 	if r.Body != nil {
-		body = r.Body
+		reqBody = r.Body
 		defer r.Body.Close()
 	}
-	if err := protocol.CopyChunks(stream, body); err != nil {
+	if err := protocol.CopyChunks(stream, reqBody); err != nil {
 		http.Error(w, "tunnel write body: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -293,6 +297,22 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	if err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
+	}
+
+	respBody, err := io.ReadAll(protocol.NewChunkReader(stream))
+	if err != nil {
+		http.Error(w, "tunnel read body: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	ct := ""
+	for k, vals := range respMeta.Headers {
+		if http.CanonicalHeaderKey(k) == "Content-Type" && len(vals) > 0 {
+			ct = vals[0]
+			break
+		}
+	}
+	if prefix == "" && respMeta.Status == http.StatusOK && strings.Contains(ct, "text/html") {
+		respBody = injectHookHTML(respBody)
 	}
 
 	h := w.Header()
@@ -305,8 +325,9 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 			h.Add(k, rewriteHeaderValue(k, v, prefix))
 		}
 	}
+	h.Set("Content-Length", fmt.Sprintf("%d", len(respBody)))
 	w.WriteHeader(respMeta.Status)
-	_, _ = io.Copy(w, protocol.NewChunkReader(stream))
+	_, _ = w.Write(respBody)
 }
 
 func rewriteHeaderValue(key, value, prefix string) string {
