@@ -1,6 +1,7 @@
 package master
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,20 +10,29 @@ import (
 	"text/template"
 )
 
-// handleAgentScript 在签名校验通过后下发 Agent 安装脚本（/agent.sh）。
-func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
+// authorizeAgentDownload 校验 GET/HEAD，并用 query token 与当前安装 Token 做常量时间比较。
+// /agent.sh 与 /agent.bin 共用；Agent WebSocket 仍走 HMAC（VerifyToken）。
+func (s *Server) authorizeAgentDownload(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return false
 	}
-	ts := r.URL.Query().Get("timestamp")
-	sign := r.URL.Query().Get("sign")
-	if !s.VerifyToken(ts, sign) {
+	tok := r.URL.Query().Get("token")
+	secret := s.currentToken()
+	if secret == "" || tok == "" ||
+		subtle.ConstantTimeCompare([]byte(tok), []byte(secret)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+// handleAgentScript 在 Token 校验通过后下发 Agent 安装脚本（/agent.sh）。
+func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeAgentDownload(w, r) {
 		return
 	}
 	host := s.AdvertiseHost(r)
-	base := "http://" + host
 	data := struct {
 		Base   string
 		Master string
@@ -30,7 +40,7 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 		GOOS   string
 		GOARCH string
 	}{
-		Base:   base,
+		Base:   "http://" + host,
 		Master: host,
 		Token:  s.currentToken(),
 		GOOS:   runtime.GOOS,
@@ -44,16 +54,9 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	_ = agentInstallTmpl.Execute(w, data)
 }
 
-// handleAgentBinary 在签名校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
+// handleAgentBinary 在 Token 校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
 func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	ts := r.URL.Query().Get("timestamp")
-	sign := r.URL.Query().Get("sign")
-	if !s.VerifyToken(ts, sign) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.authorizeAgentDownload(w, r) {
 		return
 	}
 	exe, err := os.Executable()

@@ -2,6 +2,7 @@ package master
 
 import (
 	"bytes"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,23 @@ func TestInstallCommand(t *testing.T) {
 	want := `curl -fsSL "http://10.211.55.14:52045/agent.sh?token=secret" | sudo bash`
 	if cmd != want {
 		t.Fatalf("got %q want %q", cmd, want)
+	}
+}
+
+func TestAuthorizeAgentDownload(t *testing.T) {
+	s := &Server{Token: "secret"}
+	ok := httptest.NewRequest(http.MethodGet, "/agent.sh?token=secret", nil)
+	w := httptest.NewRecorder()
+	if !s.authorizeAgentDownload(w, ok) {
+		t.Fatal("expected authorize")
+	}
+	bad := httptest.NewRequest(http.MethodGet, "/agent.sh?token=wrong", nil)
+	w = httptest.NewRecorder()
+	if s.authorizeAgentDownload(w, bad) {
+		t.Fatal("expected reject")
+	}
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d", w.Code)
 	}
 }
 
