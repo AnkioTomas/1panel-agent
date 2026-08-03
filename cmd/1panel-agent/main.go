@@ -19,11 +19,20 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "master":
-		if len(os.Args) >= 3 && os.Args[2] == "set" {
-			if err := runMasterSet(os.Args[3:]); err != nil {
-				fatal(err)
+		if len(os.Args) >= 3 {
+			switch os.Args[2] {
+			case "set":
+				if err := runMasterSet(os.Args[3:]); err != nil {
+					fatal(err)
+				}
+				return
+			case "uninstall":
+				removeBin := hasFlag(os.Args[3:], "--remove-bin")
+				if err := master.Uninstall(removeBin); err != nil {
+					fatal(err)
+				}
+				return
 			}
-			return
 		}
 		if err := runMaster(os.Args[2:]); err != nil {
 			fatal(err)
@@ -165,7 +174,7 @@ func runMasterSet(args []string) error {
 
 func runAgent(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("agent needs subcommand: register|set|run")
+		return fmt.Errorf("agent needs subcommand: register|set|run|uninstall")
 	}
 	switch args[0] {
 	case "register":
@@ -182,6 +191,9 @@ func runAgent(args []string) error {
 		}
 		agent.AutofillPanel(cfg)
 		return agent.Run(cfg)
+	case "uninstall":
+		removeBin := hasFlag(args[1:], "--remove-bin")
+		return agent.Uninstall(removeBin)
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
 	}
@@ -222,13 +234,28 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `1pm %s — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  1pm master                                          # systemd: ExecStart=/usr/local/bin/1pm master
-  curl -fsSL "http://<master>:<port>/agent.sh?token=<TOKEN>" | sudo bash
+  1pm master                          start master (systemd: ExecStart=/usr/local/bin/1pm master)
+  1pm master set --panel-pass PASS    configure panel password for node-switch
+  1pm master uninstall [--remove-bin] stop service, restore 1Panel port, remove state
+
+  1pm agent register host:port/token  register and start agent
+  1pm agent run                       start agent with saved config
+  1pm agent uninstall [--remove-bin]  stop service, remove config
+
   1pm version
 
 Master UI: http://<master>:<panel-port>/__mp/
   Auth = your 1Panel browser session (no password stored by 1pm).
 `, version)
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func fatal(err error) {
