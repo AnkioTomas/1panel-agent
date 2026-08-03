@@ -71,13 +71,10 @@ func New() (*Server, error) {
 		LocalPanel: localPanel,
 		reg:        NewRegistry(),
 	}
-	return s, nil
-}
-func (s *Server) initLocalProxy() error {
 	if s.LocalPanel != "" {
 		u, err := url.Parse(s.LocalPanel)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("parse local_panel url: %w", err)
 		}
 		s.localProxy = httputil.NewSingleHostReverseProxy(u)
 		s.localProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -85,13 +82,10 @@ func (s *Server) initLocalProxy() error {
 		}
 		s.wrapLocalProxy()
 	}
-	return nil
+	return s, nil
 }
 
 func (s *Server) Run() error {
-	if err := s.initLocalProxy(); err != nil {
-		return err
-	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
 	mux.HandleFunc("/agent.sh", s.handleAgentScript)
