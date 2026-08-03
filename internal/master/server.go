@@ -41,19 +41,10 @@ func New() (*Server, error) {
 	}
 	dirty := false
 
-	var entrance, panelUser string
-
-	// Sync username/entrance dynamically from 1panel CLI.
-	if st, err := panel.ReadSettings(); err == nil {
-		panelUser = st.UserName
-		entrance = st.SecurityEntrance
-	}
-
-	pub, internal, ent, err := EnsureTakeover(state)
+	pub, internal, entrance, panelUser, err := EnsureTakeover(state)
 	if err != nil {
 		return nil, fmt.Errorf("takeover 1Panel port: %w", err)
 	}
-	entrance = ent
 	listen := fmt.Sprintf(":%d", pub)
 	localPanel := panel.LocalPanelURL(internal)
 
