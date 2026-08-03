@@ -1,120 +1,204 @@
-# 1pm — 1Panel 多机网关
+# 1pm
 
-Master 接管本机 1Panel 端口做统一入口；Agent 经 WebSocket 隧道接入（类 FRP）。浏览器可在 Master 上查看在线节点、复制注册命令，并一键切换到子节点面板（自动账号密码登录）。
+**1Panel 社区版多机网关** — 用一台 Master 统一入口，把多台 Agent 上的 1Panel 接到同一个浏览器会话里切换使用。
 
-> 安装名用 `1pm`，避免与官方 `/usr/bin/1panel-agent` 冲突。
+> 安装名使用 `1pm`，避免与官方二进制 `/usr/bin/1panel-agent` 冲突。  
+> 本项目与 [1Panel](https://1panel.cn) / FIT2CLOUD **无官方关联**，是社区向的独立实现。
+
+---
+
+## 它解决什么问题
+
+社区版 1Panel **没有**官方多机管理（节点管理属于[专业版 / 企业版](https://1panel.cn/docs/v2/user_manual/xpack/node/)）。  
+如果你只想：
+
+- 一台面板当入口，管理多台机器上的 1Panel  
+- 子机在 NAT / 防火墙后面，**子机主动连出**即可  
+- 不想买专业版许可证  
+
+那 1pm 就是为这个场景写的。
+
+---
+
+## 与官网「节点管理」对比
+
+| | **1pm（本项目）** | **1Panel 官方节点管理** |
+|---|---|---|
+| **授权** | 开源免费，社区版可用 | 专业版 / 企业版许可证 |
+| **接入方向** | Agent **出站**连 Master（类 FRP） | 主节点 **入站**连子节点（SSH + Agent 端口，默认 9999） |
+| **NAT / 家庭宽带** | 友好（子机只需能访问 Master） | 主节点必须能 SSH 到子机，且打通 Agent 端口 |
+| **安装方式** | Master 一键脚本；Agent 复制签名 `curl \| bash` | 主节点 UI 填 SSH 账号/密钥添加节点 |
+| **面板切换** | Cookie 选节点 + 根路径反代；可自动登录子机面板 | 面板内原生节点切换，深度集成 |
+| **资源监控** | 管理页轮询 CPU / 内存 / 版本 | CPU / 内存 / 磁盘 / 网络等完整监控 |
+| **配置同步** | ❌ | ✅ 代理、告警、应用仓库、备份账号等 |
+| **文件互传** | ❌ | ✅ |
+| **批量更新 / 分组 / 概览** | ❌ | ✅ |
+| **数据库主从 / 集群** | ❌ | ✅（商业版能力） |
+| **适用版本** | 各节点保持 **社区版** 即可 | 按许可证授权节点类型 |
+| **复杂度** | 轻量：一个二进制 + systemd | 官方完整产品能力 |
+
+**一句话**：官方适合要「完整多机运维平台」且愿意付费的用户；1pm 适合社区版用户、只要「统一入口切面板」，尤其是子机在 NAT 后面的场景。
+
+---
+
+## 功能特性
+
+- **Master 端口接管**：占用原 1Panel 公网端口，本机面板迁到内部端口，对外仍是一个入口  
+- **Agent 反向隧道**：WebSocket + smux 多路复用，子机主动注册  
+- **HMAC 安装命令**：`timestamp + sign`，约 5 分钟有效，可一键复制重新签发  
+- **节点管理页** `/__mp/`：在线列表、Agent/1Panel 版本、CPU/内存（约 5 秒刷新）  
+- **一键进入子机面板**：隧道内自动登录；远程会话用 `mp_r_*` Cookie，**不覆盖**主节点登录态  
+- **侧栏入口注入**：本机 1Panel HTML 注入「多机节点」跳转  
+- **角色互斥**：同一台机器不能同时装 Master 与 Agent；`1pm uninstall` 自动识别卸载  
+
+---
 
 ## 架构
 
 ```text
-Browser ──▶ Master(:面板端口)
+Browser ──▶ Master(:原 1Panel 端口)
               │
-              ├─ /__mp/          节点管理 UI
-              ├─ mp_node cookie  选中远程节点时，根路径隧道反代 Agent 本机 1Panel
-              └─ 默认            反代本机 1Panel（takeover 后监听在 127.0.0.1:内部端口）
+              ├─ /__mp/           节点管理 UI（需本机 1Panel 已登录）
+              ├─ /agent/ws        Agent 接入（HMAC）
+              ├─ /agent.sh|.bin   签名下载安装脚本 / 二进制
+              ├─ mp_node 已选中   → 根路径隧道反代到 Agent 本机 1Panel
+              └─ 默认             → 反代本机 1Panel（127.0.0.1:内部端口）
 
-Agent ──WebSocket+Token──▶ Master
+Agent ── WebSocket + HMAC ──▶ Master
+         └── smux：HTTP / WebSocket / Stats
 ```
 
-## 构建
+---
 
-```bash
-go build -o bin/1pm ./cmd/1panel-agent
-# 交叉编译到 Linux ARM64：
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bin/1pm ./cmd/1panel-agent
-```
+## 环境要求
 
-## 发布
+- Linux（systemd），`amd64` / `arm64`  
+- 本机已安装并初始化 [1Panel](https://1panel.cn)（需 `1pctl` / `1panel`）  
+- Master 与 Agent **各占一台机器**（禁止同机双角色）  
+- Agent 需能访问 Master 的面板端口（HTTP）  
 
-推送版本 tag 后，GitHub Actions 自动构建并创建 Release（含 `linux/darwin` × `amd64/arm64` 与 `checksums.txt`）：
+---
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+## 快速开始
 
-也可在 Actions 里手动跑 **Release** workflow。
+### 1. 安装 Master
 
-## Master 一键安装（需 root）
-
-**海外**
+**GitHub（海外）**
 
 ```bash
 curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
 ```
 
-**国内 CDN**
+**国内镜像**
 
 ```bash
 curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh \
   | sudo INSTALL_CDN=cn bash
 ```
 
-可选环境变量：`INSTALL_CDN=auto|global|cn`、`VERSION=v0.0.1`。
+可选环境变量：`INSTALL_CDN=auto|global|cn`、`VERSION=v0.1.0`。
 
-脚本会：下载二进制 → 校验 checksum → 装 systemd → `enable --now`。  
-**不需要**面板密码 / 登录地址 / host / API token。
+### 2. 打开管理页
 
-| 项 | 怎么来的 |
-|----|----------|
-| 本机面板地址 | takeover → `127.0.0.1:内部端口` |
-| 安装命令里的 host | 打开 `/__mp/` 时的 `Host` |
-| 隧道 token | 自动生成；UI 可轮换 |
-| 入口 / 端口 / 用户 | `1pctl user-info`（不读 `core.db`） |
-| `/__mp/` 鉴权 | 浏览器现有本机 1Panel 登录态 → `mp_auth`；不存密码 |
-| 切换子节点 | 经隧道预登录远端，会话写入 `mp_r_*`（需 `PANEL_PASS` / `1pm master set --panel-pass`） |
+1. 先登录 **本机** 1Panel（安全入口照常）  
+2. 打开：`http://<master>:<面板端口>/__mp/`  
+   或使用侧栏注入的「多机节点」  
 
-systemd：`ExecStart=/usr/local/bin/1pm master`。
+### 3. 安装 Agent
 
-管理页：`http://<master>:<原面板端口>/__mp/`（**需先登录本机 1Panel**；未登录会跳转安全入口）
-
-左侧菜单：HTML/JS 注入「多机节点」入口（整页跳转，避开 Vue 路由）。
-
-状态文件：`/var/lib/1pm/master.json`
-
-systemd 示例：[`deploy/systemd/1pm-master.service`](deploy/systemd/1pm-master.service)
-
-## Agent（推荐从 Master 一键安装）
+在管理页复制「子节点安装命令」，到 **另一台** 机器执行（需本机 1Panel 密码，用于远程自动登录）：
 
 ```bash
-# 管理页复制「子节点安装命令」（HMAC 签名，约 5 分钟有效）
-curl -fsSL "http://10.211.55.14:52045/agent.sh?timestamp=<ts>&sign=<sig>" | sudo bash
+curl -fsSL "http://<master>:<port>/agent.sh?timestamp=...&sign=..." | sudo bash
 ```
 
-脚本会：签名下载二进制 → `agent install` 落盘 Master/Token → systemd 执行 `agent run`。轮换 Token 后需重新安装。
+安装脚本会：下载二进制 → 写入配置 → 加密保存面板密码 → 启动 `1pm-agent.service`。
 
-systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)（由安装脚本生成）
+### 4. 切换节点
 
-## 使用
+管理页出现在线节点后，点「进入面板」。  
+切回主节点：管理页「切换回主节点 1Panel」，或清除 `mp_node` Cookie。
 
-1. 打开 `http://master:端口/__mp/`
-2. 复制「子节点安装命令」到 Agent 机器执行（`curl … | sudo bash`）
-3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点；远程会话存在 `mp_r_*` cookie，**不会覆盖**本机 `psession`
-4. 点「切换回主节点 1Panel」只清除 `mp_node`，主节点登录态保留，无需重新登录
+---
 
-## 实验室验证（已通过）
+## 卸载
 
-| 机器 | IP | 角色 |
-|------|-----|------|
-| ubuntu | 10.211.55.14 | Master + 本机 1Panel |
-| ubuntu | 10.211.55.15 | Agent + 本机 1Panel |
+自动识别本机角色（Master / Agent / 两者）：
 
-验证结果：
+```bash
+sudo 1pm uninstall
+```
 
-- Master takeover：`1pm` 监听 `52045`，本机 1Panel 迁到 `62045`
-- Agent 在线出现在 `/__mp/`
-- `/__mp/go/{id}` 预登录成功（`psession`），隧道访问 `/api/v2/dashboard/base/os` 返回子机系统信息
-- `/assets/js/...` 经 `mp_node` 根路径隧道可拉取（约 270KB）
+也可显式：
 
-## 开发测试
+```bash
+sudo 1pm master uninstall   # 恢复原 1Panel 端口并清理
+sudo 1pm agent uninstall
+```
+
+---
+
+## 构建与发布
+
+```bash
+# 本地
+go build -o bin/1pm ./cmd/1panel-agent
+
+# 交叉编译（示例）
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath \
+  -ldflags="-s -w -X 1panel-agent/internal/buildinfo.Version=v0.1.0" \
+  -o bin/1pm_linux_arm64 ./cmd/1panel-agent
+```
+
+推送版本 tag 后，GitHub Actions 会构建 Release（`linux/darwin` × `amd64/arm64` + `checksums.txt` + `install.sh`）：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ```bash
 go test ./...
-./deploy/docker/test.sh
 ```
 
-## 说明
+---
 
-- 切换远程节点使用 **Cookie 选节点 + 根路径反代**，避免 1Panel 前端绝对路径 `/assets` 在前缀模式下失效。
-- 登录密码按 1Panel v2 前端逻辑做 RSA+AES 混合加密。
-- Takeover 会改 `ServerPort` 并 `systemctl restart 1panel-core`；卸载时需把端口改回或恢复 `master.json` 中的 `original_port`。
+## 配置与路径
+
+| 项 | 说明 |
+|----|------|
+| Master 状态 | `/var/lib/1pm/master.json`（Token、原端口、内部端口等） |
+| Agent 配置 | `/root/.1panel-agent/agent.json`（Master、Token、面板地址等） |
+| Agent 密码 | AES-GCM 加密落盘；密钥 `secret.key`（同目录） |
+| 安装命令 Host | 打开 `/__mp/` 时的请求 `Host`，可用配置覆盖 `public_host` |
+| `/__mp/` 鉴权 | 复用本机 1Panel 登录 Cookie → 签发 `mp_auth`，Master **不存**主节点密码 |
+
+更多细节见 [`docs/`](docs/README.md)（架构、流程、API、CLI、设计说明）。
+
+---
+
+## 文档
+
+| 文档 | 内容 |
+|------|------|
+| [architecture.md](docs/architecture.md) | 架构与目录结构 |
+| [flow.md](docs/flow.md) | Takeover / 隧道 / 鉴权 / Cookie 隔离等流程 |
+| [http_api.md](docs/http_api.md) | HTTP API |
+| [cli.md](docs/cli.md) | CLI 参考 |
+| [design_notes.md](docs/design_notes.md) | 设计决策 |
+
+---
+
+## 限制与注意
+
+- **不是**官方专业版替代品：无配置同步、文件互传、批量升级、节点分组等  
+- Takeover 会修改本机 1Panel `ServerPort` 并重启 `1panel-core`；卸载时会尝试恢复  
+- 安装命令签名约 **5 分钟**有效；复制按钮会重新向接口签发  
+- Token 轮换后，旧 Agent 全部失效，需重新执行安装命令  
+- 仅建议在可信网络或 VPN 后使用；Agent 下载与 WS 依赖共享 Token 的 HMAC  
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 AnkioTomas
