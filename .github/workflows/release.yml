@@ -79,17 +79,12 @@ jobs:
           body: |
             ## Install Master
 
-            **推荐（jsDelivr / akams）**
+            **推荐（钉版本，避免 jsDelivr @main 缓存）**
             ```bash
-            curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+            curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@${{ steps.ver.outputs.version }}/install.sh | sudo bash
             ```
             ```bash
-            curl -fsSL https://cdn.akams.cn/jsd/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
-            ```
-
-            **GitHub 直连**
-            ```bash
-            curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo INSTALL_CDN=global bash
+            curl -fsSL https://gh-proxy.com/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
             ```
 
             Optional: `INSTALL_CDN=auto|cn|global` `VERSION=vX.Y.Z`

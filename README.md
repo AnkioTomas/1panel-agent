@@ -99,23 +99,19 @@ Agent ── WebSocket + HMAC ──▶ Master
 
 ### 1. 安装 Master
 
-**推荐（jsDelivr / akams，拉仓库内 `install.sh`）**
+**推荐（Release 附件，经代理；避免 jsDelivr `@main` 永久缓存旧脚本）**
 
 ```bash
-curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+curl -fsSL https://gh-proxy.com/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
 ```
+
+**jsDelivr（必须钉版本 tag，不要写 `@main`）**
 
 ```bash
-curl -fsSL https://cdn.akams.cn/jsd/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@v0.0.3/install.sh | sudo bash
 ```
 
-脚本会从 [github.akams.cn](https://github.akams.cn/) 拉取加速节点并测速，自动选最快节点下载 Release 二进制。
-
-**GitHub Release（海外直连）**
-
-```bash
-curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo INSTALL_CDN=global bash
-```
+脚本用 `checksums.txt` 探测哪个代理真能下 Release，再下二进制。`@main` 在 jsDelivr 上会永久缓存第一次内容——你之前看到的 `安装 ==> latest release` 就是旧脚本把日志吃进版本号了。
 
 可选环境变量：`INSTALL_CDN=auto|global|cn`、`VERSION=v0.1.0`。
 
