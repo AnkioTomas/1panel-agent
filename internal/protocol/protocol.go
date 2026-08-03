@@ -22,8 +22,10 @@ const (
 	StreamTypeStats byte = 3
 	// StreamTypeUpdate 表示 Master 通知 Agent 从本机 /agent.bin 强制更新二进制。
 	StreamTypeUpdate byte = 4
-	maxJSONFrame          = 16 << 20
-	maxChunk              = 8 << 20
+	// StreamTypePanelUpgrade 表示 Master 通知 Agent 用本机会话触发 1Panel 官方升级 API。
+	StreamTypePanelUpgrade byte = 5
+	maxJSONFrame                = 16 << 20
+	maxChunk                    = 8 << 20
 )
 
 // Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。

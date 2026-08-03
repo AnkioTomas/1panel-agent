@@ -54,3 +54,5 @@ Takeover 与 Agent 代理会争同一面板端口与职责。安装脚本与 `ro
 ## 10. 不做官方式「检查更新」
 
 社区场景不需要再包一层 1Panel upgrade API。管理页只展示 Agent / 1Panel **当前版本**（注册 + Stats 上报）。
+
+1pm 自身更新另走通路：主节点 `POST /__mp/api/update-master` 从 Release 拉二进制；子节点 `POST /__mp/api/force-update` 从主节点 `/agent.bin` 同步。这与 1Panel 官方升级无关。

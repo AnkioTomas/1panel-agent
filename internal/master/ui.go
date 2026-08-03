@@ -46,6 +46,12 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	case "/api/force-update":
 		s.handleForceUpdate(w, r)
 		return
+	case "/api/update-master":
+		s.handleUpdateMaster(w, r)
+		return
+	case "/api/upgrade-panel":
+		s.handleUpgradePanel(w, r)
+		return
 	}
 
 	if path == "" || path == "/" {
@@ -394,9 +400,10 @@ tr:last-child td{border-bottom:0}
       </p>
       <div class="actions">
         <a class="btn primary-panel" href="/__mp/local">切换回主节点 1Panel</a>
+        <button class="btn plain" type="button" id="btnUpdateMaster" onclick="updateMaster()">更新主节点</button>
         <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">强制更新会让所有在线子节点从本机拉取最新 1pm 二进制（同安装时 /agent.bin）并重启服务。</p>
+      <p class="meta" style="margin:14px 0 0">先「更新主节点」（从 Release 拉最新 1pm 并重启 master），再「强制更新子节点」（子节点从本机 /agent.bin 拉取并重启）。</p>
     </div>
   </div>
 </div>
@@ -504,6 +511,23 @@ function rotateToken(){
     alert('轮换失败: '+e.message);
   }).finally(()=>{
     btn.disabled=false; btn.textContent='轮换 Token';
+  });
+}
+function updateMaster(){
+  if(!confirm('将从 Release 下载最新 1pm，替换本机二进制并重启主节点服务。继续？')) return;
+  const btn=document.getElementById('btnUpdateMaster');
+  btn.disabled=true; btn.textContent='更新中…';
+  fetch('/__mp/api/update-master',{method:'POST',credentials:'include'}).then(r=>{
+    return r.json().then(data=>{
+      if(!r.ok || data.ok===false) throw new Error(data.message||('HTTP '+r.status));
+      return data;
+    });
+  }).then(data=>{
+    showToast('主节点已更新至 '+(data.tag||'')+'，正在重启…');
+    setTimeout(function(){ location.reload(); }, 2500);
+  }).catch(e=>{
+    alert('更新主节点失败: '+(e&&e.message?e.message:e));
+    btn.disabled=false; btn.textContent='更新主节点';
   });
 }
 function forceUpdate(){

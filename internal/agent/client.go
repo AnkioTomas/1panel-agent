@@ -152,6 +152,8 @@ func (c *Client) handleStream(stream *smux.Stream) {
 		c.handleStats(stream, body)
 	case protocol.StreamTypeUpdate:
 		c.handleUpdate(stream, body)
+	case protocol.StreamTypePanelUpgrade:
+		c.handlePanelUpgrade(stream, body)
 	default:
 		c.handleHTTP(stream, meta, body)
 	}

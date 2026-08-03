@@ -77,6 +77,21 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 
 轮换 Token；旧 Agent 全部失效。响应含新的 `install` 命令。
 
+### POST /__mp/api/update-master
+
+从 GitHub Release（与 `install.sh` 同源；可用 `GITHUB_API` / `GITHUB_DL` / `VERSION` / `INSTALL_CDN` 覆盖）下载当前平台 `1pm_linux_*`，替换本机二进制，回包后异步 `systemctl restart 1pm-master`。
+
+```json
+{
+  "ok": true,
+  "old_version": "v0.0.1",
+  "tag": "v0.0.2",
+  "restarting": true
+}
+```
+
+建议顺序：先更新主节点，再强制更新子节点（子节点吃的是主节点磁盘上的 `/agent.bin`）。
+
 ### POST /__mp/api/force-update
 
 通知所有在线 Agent 从本 Master 拉取 `/agent.bin`（同安装脚本），替换二进制并 `systemctl restart 1pm-agent`。
