@@ -1,71 +1,66 @@
-# 1pm 项目架构分析
+# 1pm 项目架构
 
-> 项目名：`1panel-agent`（安装名 `1pm`）  
+> 仓库：`1panel-agent`（安装名 `1pm`）  
 > 语言：Go 1.25  
-> 核心依赖：`github.com/coder/websocket`、`github.com/xtaci/smux`
+> 依赖：`github.com/coder/websocket`、`github.com/xtaci/smux`
 
 ---
 
 ## 一句话定义
 
-**1pm 是一个 1Panel 多机网关**：Master 节点接管本机 1Panel 端口作为统一入口，Agent 节点通过 WebSocket + smux 隧道接入（类 FRP），浏览器在 Master 上可查看所有在线子节点、一键切换到子节点面板（自动完成账号登录）。
+**1pm 是 1Panel 社区版多机网关**：Master 接管本机 1Panel 公网端口；Agent 经 WebSocket + smux 反向隧道接入；浏览器在 Master 上管理节点并切换到子机面板（Agent 侧自动登录）。
 
 ---
 
 ## 整体架构
 
-```
+```text
 Browser ──HTTP──▶ Master (:原面板端口)
                     │
-                    ├─ /__mp/              节点管理 UI（鉴权：本机 1Panel 登录态）
-                    ├─ /agent/ws           Agent WebSocket 接入点
-                    ├─ /agent.sh           Agent 安装脚本（含 Token）
-                    ├─ /agent.bin          Agent 二进制（Master 自身复制）
-                    ├─ mp_node cookie 有效  → 隧道反代选中的 Agent 本机 1Panel
-                    └─ 默认               → 反代本机 1Panel（takeover 迁移后的内部端口）
+                    ├─ /__mp/              节点管理 UI（本机 1Panel 登录态 → mp_auth）
+                    ├─ /agent/ws           Agent WebSocket（HMAC timestamp+sign）
+                    ├─ /agent.sh           签名安装脚本
+                    ├─ /agent.bin          Master 自身二进制
+                    ├─ mp_node 有效        → 根路径隧道反代 Agent 本机 1Panel
+                    └─ 默认               → 反代本机 1Panel（127.0.0.1:内部端口）
 
-Agent ──WebSocket+Token──▶ Master /agent/ws
-         └─ smux 多路复用 ←── Master 主动 OpenStream 发请求
+Agent ──WebSocket+HMAC──▶ Master /agent/ws
+         └─ smux ←── Master OpenStream（HTTP / WS / Stats）
 ```
 
 ---
 
 ## 目录结构
 
-```
+```text
 1panel-agent/
-├── cmd/1panel-agent/
-│   └── main.go             CLI 入口（master / agent 子命令）
+├── cmd/1panel-agent/main.go     CLI：master / agent / uninstall / version
+├── install.sh                   Master 一键安装（角色互斥检查）
 ├── internal/
-│   ├── agent/              Agent 侧逻辑
-│   │   ├── client.go       WebSocket 连接 + smux 流处理（HTTP/WS 双模式）
-│   │   ├── detect.go       自动检测本机 1Panel 地址
-│   │   └── install.go      agent install：解析目标并持久化配置
-│   ├── master/             Master 侧逻辑
-│   │   ├── server.go       HTTP 服务器、Agent WS 接入、HTTP/WS 隧道代理
-│   │   ├── auth.go         /__mp/ 鉴权（mp_auth cookie + 本机 1Panel 会话验证）
-│   │   ├── prepare.go      Takeover：迁移 1Panel 到内部端口、重启 1panel-core
-│   │   ├── registry.go     在线 Agent 注册表（内存，smux Session 持有）
-│   │   ├── install.go      /agent.sh 脚本生成 + /agent.bin 二进制分发
-│   │   ├── switch.go       /__mp/go/{id} 切换节点（写 mp_node Cookie + 重定向）
-│   │   ├── token.go        Token 管理（轮换）
-│   │   ├── inject.go       HTML 注入（1Panel 侧边栏节点切换按钮）
-│   │   ├── cookies.go      Cookie 命名空间隔离（mp_r_* 前缀）
-│   │   ├── ui.go           /__mp/ 管理页面（Go template HTML）
-│   │   └── upgrade.go      检查 Master/Agent 版本更新
-│   ├── panel/              1Panel 交互层
-│   │   ├── settings.go     通过 1panel/1pctl CLI 读取端口/安全入口/用户名/版本
-│   │   ├── login.go        1Panel v2 登录（RSA+AES 混合加密密码）
-│   │   ├── encrypt.go      RSA 公钥加密 + AES 密码封装
-│   │   └── token.go        API Key 注入（X-Panel-Key）
-│   ├── protocol/
-│   │   └── protocol.go     二进制帧协议：JSON 帧 + 分块传输
-│   └── config/
-│       ├── config.go       Agent 配置（~/.1panel-agent/agent.json）
-│       └── master.go       Master 状态（/var/lib/1pm/master.json）
-├── deploy/
-│   ├── systemd/            systemd 单元文件模板
-│   └── docker/             集成测试环境
-├── scripts/                辅助脚本
-└── install.sh              Master 一键安装脚本（下载 + checksum + systemd）
+│   ├── agent/
+│   │   ├── client.go            WS 注册 + smux Accept（HTTP/WS/Stats）
+│   │   ├── detect.go            自动探测本机 1Panel
+│   │   ├── install.go           agent install 落盘配置
+│   │   ├── stats.go             /proc 采 CPU/内存 + 版本
+│   │   └── uninstall.go         Clean / Uninstall
+│   ├── master/
+│   │   ├── server.go            HTTP 服务、Agent WS、HTTP/WS 隧道
+│   │   ├── auth.go              /__mp/ 鉴权（mp_auth + 本机会话校验）
+│   │   ├── prepare.go           Takeover
+│   │   ├── registry.go          在线 Session + Stats 字段
+│   │   ├── stats.go             经 smux 拉 HostStats
+│   │   ├── install.go           /agent.sh、/agent.bin、install-command
+│   │   ├── switch.go            /__mp/go/{id}、/__mp/local（写 mp_node）
+│   │   ├── token.go             Token 轮换
+│   │   ├── inject.go            侧栏节点切换 Hook
+│   │   ├── cookies.go           mp_r_* Cookie 隔离
+│   │   ├── ui.go                /__mp/ 管理页 + /api/agents
+│   │   └── uninstall.go         Clean / Uninstall
+│   ├── panel/                   1Panel CLI / 登录 / 加密（不读 core.db）
+│   ├── protocol/                Register / RequestMeta / HostStats / 分块帧
+│   ├── config/                  agent.json、master.json、HMAC Sign、AES-GCM
+│   ├── role/                    Master/Agent 互斥检测
+│   └── buildinfo/               构建期 Version
+├── docs/
+└── .github/workflows/release.yml
 ```

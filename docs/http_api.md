@@ -1,37 +1,31 @@
 # HTTP API 参考
 
-Master 对外暴露以下 HTTP 端点（监听在原 1Panel 端口）。
+Master 监听在原 1Panel 公网端口。
 
 ---
 
 ## 公开端点（HMAC：timestamp + sign）
 
-鉴权与 Agent WebSocket 相同：`sign = hex(HMAC-SHA256(token, "timestamp=<unix>"))`，允许 ±5 分钟时钟偏差。**不接受裸 `token=` 查询参数。**
+`sign = hex(HMAC-SHA256(token, "timestamp=<unix>"))`，允许 ±5 分钟偏差。**不接受**裸 `token=`。
 
 ### GET /agent/ws?timestamp=\<ts\>&sign=\<sign\>
 
-Agent WebSocket 接入点。
-
-- 校验 timestamp + sign
-- 升级为 WebSocket，读取 Register 握手包
-- 建立 smux 多路复用会话
-- Agent 掉线时自动从注册表移除
+Agent WebSocket：校验签名 → 读 Register → smux Server → 登记 Registry。
 
 ### GET /agent.sh?timestamp=\<ts\>&sign=\<sign\>
 
-返回 Agent 安装 shell 脚本（text/plain）。
+Agent 安装脚本：
 
-- 脚本内嵌 Master 地址与 Token（仅签名通过后下发）
-- 安装流程：签名下载 /agent.bin → `agent install` 落盘 → systemd `agent run`
-- 可选交互/`PANEL_PASS` 调用 `agent setpwd`（密码加密存储）
-- UI 展示的 curl 命令含当前签名，约 5 分钟过期
+1. 签名下载 `/agent.bin`  
+2. `agent install` 落盘  
+3. 交互或 `PANEL_PASS` → `agent setpwd`  
+4. systemd：`agent run`  
+
+若本机已有 Master → 脚本直接失败。
 
 ### GET /agent.bin?timestamp=\<ts\>&sign=\<sign\>
 
-返回 Master 自身的二进制文件（application/octet-stream）。
-
-- 即 `os.Executable()` 所指向的文件
-- 响应头包含 `X-1pm-GOOS` / `X-1pm-GOARCH`
+Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 
 ---
 
@@ -39,25 +33,21 @@ Agent WebSocket 接入点。
 
 ### GET /__mp/
 
-节点管理 UI 主页（HTML）。
-
-展示：在线 Agent 数量、注册地址、安全入口、子节点安装命令、在线节点列表、版本信息。
-
-**鉴权流程**：检查 `mp_auth` cookie → 验证本机 1Panel 登录态 → 未登录则 302 到 1Panel 登录页。
+节点管理页 HTML：安装命令、在线表（Agent/1Panel 版本、CPU、内存）、回主节点入口。
 
 ### GET /__mp/api/agents
 
-返回在线 Agent 列表（JSON）。
+先经 smux Stats 刷新各 Agent，再返回：
 
 ```json
 [
   {
     "id": "a1b2c3d4e5f6a7b8",
     "hostname": "ubuntu-node2",
-    "panel_url": "http://127.0.0.1:152045",
-    "remote_ip": "10.211.55.15",
-    "panel_version": "v2.4.1",
-    "agent_version": "v0.1.0",
+    "panel_url": "http://127.0.0.1:52045",
+    "remote_ip": "10.211.55.14",
+    "panel_version": "v2.2.4",
+    "agent_version": "v0.0.0-dev",
     "cpu_percent": 12.5,
     "mem_total": 8589934592,
     "mem_used": 2147483648,
@@ -66,53 +56,41 @@ Agent WebSocket 接入点。
 ]
 ```
 
-管理页打开时每 5 秒轮询本接口；Master 经隧道向 Agent 拉取 CPU/内存/版本后再返回。
+前端约每 5 秒轮询。
 
 ### GET /__mp/api/install-command
 
-实时签发带 HMAC 的一键安装命令（约 5 分钟有效）。管理页「复制命令」会先调本接口再写入剪贴板。
-
 ```json
 {
-  "install": "curl -fsSL \"http://10.0.0.1/agent.sh?timestamp=...&sign=...\" | sudo bash"
+  "install": "curl -fsSL \"http://host:port/agent.sh?timestamp=...&sign=...\" | sudo bash"
 }
 ```
+
+「复制命令」会先调本接口再写入剪贴板。
 
 ### POST /__mp/api/rotate-token
 
-轮换隧道 Token。轮换后所有已注册 Agent 立即失效，需重新执行安装命令。
-
-```json
-{
-  "install": "curl -fsSL \"http://10.211.55.14:52045/agent.sh?timestamp=<ts>&sign=<sig>\" | sudo bash"
-}
-```
+轮换 Token；旧 Agent 全部失效。响应含新的 `install` 命令。
 
 ### GET /__mp/go/{id}
 
-切换到指定 Agent 节点（写 mp_node Cookie 后重定向）。
-
-- 通过隧道完成远端 1Panel 登录（RSA+AES 加密）
-- 写入 `mp_node` + `mp_r_*` cookies
-- 302 重定向到 1Panel 主页
+Agent 须在线；写 `mp_node` 后 302 到安全入口。自动登录发生在后续隧道请求的 **Agent 侧**。
 
 ### GET /__mp/local
 
-切换回主节点（清除 `mp_node` cookie），302 重定向到本机 1Panel。
+清除 `mp_node`，302 回本机面板。
 
 ### GET /__mp/touch
 
-心跳端点：验证本机 1Panel 会话有效则签发 `mp_auth` cookie（204 No Content），否则 401。
+保活：已登录则 204；否则 401。
 
 ---
 
-## 根路径路由逻辑
+## 根路径路由
 
-```
-GET / (及所有非 /__mp 路径)
-  ├─ 有 mp_node cookie 且 Agent 在线 → 隧道反代到对应 Agent 的 1Panel
-  │   ├─ WebSocket 请求 → proxyWebSocket（smux stream 双向透传）
-  │   └─ HTTP 请求 → proxyHTTP（smux stream，text/html 注入侧边栏 JS）
-  ├─ 无 mp_node 且 localProxy 已配置 → 反代本机 1Panel（内部端口）
-  └─ 无 localProxy → 404
+```text
+任意非 /__mp 路径
+  ├─ mp_node 且 Agent 在线 → 隧道（WS 或 HTTP；HTML 注入 Hook）
+  ├─ 无 mp_node → 本机 localProxy（内部端口）
+  └─ 未配置 localProxy → 404
 ```

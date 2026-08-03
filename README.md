@@ -24,11 +24,11 @@
 
 | | **1pm（本项目）** | **1Panel 官方节点管理** |
 |---|---|---|
-| **授权** | 开源免费，社区版可用 | 专业版 / 企业版许可证 |
+| **授权** | MIT 开源，社区版可用 | 专业版 / 企业版许可证 |
 | **接入方向** | Agent **出站**连 Master（类 FRP） | 主节点 **入站**连子节点（SSH + Agent 端口，默认 9999） |
 | **NAT / 家庭宽带** | 友好（子机只需能访问 Master） | 主节点必须能 SSH 到子机，且打通 Agent 端口 |
 | **安装方式** | Master 一键脚本；Agent 复制签名 `curl \| bash` | 主节点 UI 填 SSH 账号/密钥添加节点 |
-| **面板切换** | Cookie 选节点 + 根路径反代；可自动登录子机面板 | 面板内原生节点切换，深度集成 |
+| **面板切换** | Cookie 选节点 + 根路径反代；Agent 侧自动登录 | 面板内原生节点切换，深度集成 |
 | **资源监控** | 管理页轮询 CPU / 内存 / 版本 | CPU / 内存 / 磁盘 / 网络等完整监控 |
 | **配置同步** | ❌ | ✅ 代理、告警、应用仓库、备份账号等 |
 | **文件互传** | ❌ | ✅ |
@@ -41,14 +41,30 @@
 
 ---
 
+## 界面预览
+
+### 多机节点管理页（`/__mp/`）
+
+在线 Agent、签名安装命令、CPU/内存与版本一览：
+
+![多机节点管理页](docs/images/mp-admin.png)
+
+### 侧栏节点切换
+
+注入到 1Panel 侧栏底部：主节点 / 子节点一键切换，并可进入「管理节点…」：
+
+![侧栏节点切换](docs/images/node-switcher.png)
+
+---
+
 ## 功能特性
 
 - **Master 端口接管**：占用原 1Panel 公网端口，本机面板迁到内部端口，对外仍是一个入口  
 - **Agent 反向隧道**：WebSocket + smux 多路复用，子机主动注册  
 - **HMAC 安装命令**：`timestamp + sign`，约 5 分钟有效，可一键复制重新签发  
 - **节点管理页** `/__mp/`：在线列表、Agent/1Panel 版本、CPU/内存（约 5 秒刷新）  
-- **一键进入子机面板**：隧道内自动登录；远程会话用 `mp_r_*` Cookie，**不覆盖**主节点登录态  
-- **侧栏入口注入**：本机 1Panel HTML 注入「多机节点」跳转  
+- **一键进入子机面板**：Agent 侧自动登录；远程会话用 `mp_r_*` Cookie，**不覆盖**主节点登录态  
+- **侧栏入口注入**：本机 1Panel HTML 注入节点切换与「管理节点」  
 - **角色互斥**：同一台机器不能同时装 Master 与 Agent；`1pm uninstall` 自动识别卸载  
 
 ---
@@ -102,11 +118,11 @@ curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/release
 
 1. 先登录 **本机** 1Panel（安全入口照常）  
 2. 打开：`http://<master>:<面板端口>/__mp/`  
-   或使用侧栏注入的「多机节点」  
+   或使用侧栏「管理节点…」  
 
 ### 3. 安装 Agent
 
-在管理页复制「子节点安装命令」，到 **另一台** 机器执行（需本机 1Panel 密码，用于远程自动登录）：
+在管理页点「复制命令」，到 **另一台** 机器执行（需本机 1Panel 密码，用于远程自动登录）：
 
 ```bash
 curl -fsSL "http://<master>:<port>/agent.sh?timestamp=...&sign=..." | sudo bash
@@ -116,8 +132,8 @@ curl -fsSL "http://<master>:<port>/agent.sh?timestamp=...&sign=..." | sudo bash
 
 ### 4. 切换节点
 
-管理页出现在线节点后，点「进入面板」。  
-切回主节点：管理页「切换回主节点 1Panel」，或清除 `mp_node` Cookie。
+- 管理页点「进入面板」，或侧栏弹出列表选择子节点  
+- 切回主节点：侧栏选「主节点」，或管理页「切换回主节点 1Panel」
 
 ---
 
@@ -173,7 +189,7 @@ go test ./...
 | 安装命令 Host | 打开 `/__mp/` 时的请求 `Host`，可用配置覆盖 `public_host` |
 | `/__mp/` 鉴权 | 复用本机 1Panel 登录 Cookie → 签发 `mp_auth`，Master **不存**主节点密码 |
 
-更多细节见 [`docs/`](docs/README.md)（架构、流程、API、CLI、设计说明）。
+更多细节见 [`docs/`](docs/README.md)。
 
 ---
 
@@ -183,6 +199,7 @@ go test ./...
 |------|------|
 | [architecture.md](docs/architecture.md) | 架构与目录结构 |
 | [flow.md](docs/flow.md) | Takeover / 隧道 / 鉴权 / Cookie 隔离等流程 |
+| [data_structures.md](docs/data_structures.md) | 核心数据结构与协议帧 |
 | [http_api.md](docs/http_api.md) | HTTP API |
 | [cli.md](docs/cli.md) | CLI 参考 |
 | [design_notes.md](docs/design_notes.md) | 设计决策 |

@@ -2,124 +2,124 @@
 
 ## 1. Takeover（端口接管）
 
-Master 启动时默认执行 takeover：
+Master 启动时执行：
 
-```
-1. 调用 1panel user-info 读取当前面板端口（如 52045）
-2. 计算内部端口：InternalPort = 原端口 + 100000（若 >65535 则 +10000，兜底用 152045）
-   例：52045 → 152045
-3. 调用 1panel update port 把 1Panel 监听地址改为 127.0.0.1:152045
-4. systemctl restart 1panel-core（最多等待 45s 确认端口可用）
-5. 1pm 自己监听在原来的 :52045
-6. 状态写入 /var/lib/1pm/master.json（OriginalPort/InternalPort 记录）
+```text
+1. 1panel user-info 读当前面板端口（如 52045）
+2. InternalPort = OriginalPort + 10000（>65535 则 -10000）
+   例：52045 → 62045
+3. 1panel update port → 1Panel 迁到内部端口
+4. systemctl restart 1panel-core（最多等 45s 端口就绪）
+5. 1pm 监听原 :52045
+6. 写入 /var/lib/1pm/master.json（original_port / internal_port / token）
 ```
 
-卸载时需将端口改回原值，或从 master.json 的 `original_port` 恢复。
+卸载（`1pm uninstall` / `master uninstall`）会尝试把端口改回 `original_port`。
 
 ---
 
-## 2. Agent 接入流程
+## 2. Agent 接入
 
-```
+```text
 Agent                           Master
   │                               │
-  │──── WebSocket /agent/ws?timestamp=&sign= ──▶│  验证 HMAC
+  │── WS /agent/ws?timestamp=&sign= ──▶│  VerifyToken（HMAC，±5 分钟）
   │                               │
-  │◀─── 等待 Register JSON ───────│
-  │──── Register{ID,Hostname,PanelURL,PanelVersion} ──▶│
-  │◀─── RegisterOK{OK:true} ──────│
+  │── Register{ID,Hostname,PanelURL,  │
+  │            PanelVersion,AgentVersion} ▶│
+  │◀── RegisterOK{OK:true} ───────│
   │                               │
-  │   smux 多路复用层建立（Client/Server）│
-  │   Agent: AcceptStream 循环    │  Master: reg.Put(Session)
-  │                               │
-  │   心跳：KeepAlive 20s，超时 60s │
+  │   smux Client / Server        │  reg.Put(Session)
+  │   AcceptStream 循环           │
+  │   KeepAlive 20s / 超时 60s    │
 ```
 
-连接断开后 Agent 指数退避重连（1s → 2s → 4s → … 最大 30s）。
+断线后 Agent 指数退避重连（1s → … → 30s）。  
+本机已装 Master 时 `agent run` / `agent install` 会拒绝。
 
 ---
 
-## 3. HTTP 隧道请求流程（Browser → Agent 1Panel）
+## 3. HTTP 隧道（Browser → Agent 1Panel）
 
-```
+```text
 Browser ──GET /api/xxx──▶ Master
-                            │  (mp_node cookie 指向 agent-id)
-                            │  sess = reg.Get(agent-id)
-                            │  stream = sess.Mux.OpenStream()
+                            │  mp_node → sess = reg.Get(id)
+                            │  OpenStream + WriteRequestMeta(HTTP)
+                            │  CopyChunks(body)
                             │
-                            │──[stream] WriteRequestMeta(type=HTTP, method, path, headers)──▶ Agent
-                            │──[stream] CopyChunks(requestBody) ──▶ Agent
+                            │              Agent: 必要时自动登录本机 1Panel
+                            │              Agent: 转发并回写 ResponseMeta + chunks
                             │
-                            │                       Agent: 转发给本机 1Panel
-                            │                       Agent: 读响应回写 stream
-                            │
-                            │◀──[stream] ReadJSON(ResponseMeta{status, headers}) ──
-                            │◀──[stream] ChunkReader(responseBody) ──
-                            │
-                            │  如果是 text/html → 注入侧边栏 JS hook
-                            │  Set-Cookie 重命名为 mp_r_* 前缀
-                            │
+                            │  text/html → 注入侧栏 Hook
+                            │  Set-Cookie → mp_r_* 前缀
 Browser ◀── 响应 ──────────┘
 ```
 
----
-
-## 4. WebSocket 隧道流程
-
-WebSocket 请求走独立分支（StreamTypeWS=0x02），Agent 侧直接 TCP dial 本机 1Panel，完成 HTTP Upgrade 握手后双向 io.Copy，实现完整 WebSocket 透传。
+自动登录发生在 **Agent 侧**（解密 `panel_password_enc`），Master **不存**子机/主节点面板密码。
 
 ---
 
-## 5. 节点切换（/__mp/go/{id}）
+## 4. WebSocket 隧道
 
+`StreamTypeWS`：Agent 对本机 1Panel 做 HTTP Upgrade 后双向 `io.Copy`。
+
+---
+
+## 5. Stats 隧道
+
+管理页每 5 秒请求 `GET /__mp/api/agents` 时，Master 对每个在线 Agent：
+
+1. `OpenStream` + `StreamTypeStats`  
+2. Agent 回 `HostStats`（CPU%、内存、Agent/1Panel 版本）  
+3. `Registry.UpdateStats` 后返回 JSON 列表  
+
+---
+
+## 6. 节点切换
+
+### `/__mp/go/{id}`
+
+校验 Agent 在线 → 写 `mp_node` Cookie → 302 到安全入口（或 `/`）。  
+**不在此处登录**；首次经隧道访问时由 Agent 自动登录并下发 `mp_r_*`。
+
+### `/__mp/local`
+
+清除 `mp_node` → 302 回本机面板。
+
+后续根路径：有 `mp_node` 且在线 → 隧道；否则 → 本机 `localProxy`。
+
+---
+
+## 7. `/__mp/` 鉴权
+
+```text
+1. mp_auth cookie 与内存 sessionSecret 常量时间比较 → 通过
+2. 否则用浏览器 Cookie 调本机 1Panel /api/v2/dashboard/base/os
+   code=200 → 生成新 sessionSecret，签发 mp_auth，放行
+3. 否则：API → 401 JSON；页面 → 302 到安全入口（?mp_return=/__mp/）
 ```
-Browser ──GET /__mp/go/{id}──▶ Master
-                                │
-                                │  校验 agent 在线
-                                │  写入 Cookie：mp_node = agent-id
-                                │
-Browser ◀── 302 重定向到入口 ───┘
 
-后续所有根路径请求：
-  Master 读 mp_node cookie → 路由到对应 Agent 隧道
-  Cookie 头中 mp_r_* 脱前缀后发给 Agent 1Panel（不污染本地 psession）
-  远端 Set-Cookie 加 mp_r_ 前缀写回浏览器
-```
+`mp_auth` 为随机 token（非 Token-HMAC、无固定 7 天 TTL）；新签发会顶掉旧会话。
 
 ---
 
-## 6. 鉴权机制（/__mp/）
+## 8. HTML 注入（侧栏）
 
-```
-访问 /__mp/ 时：
-  1. 检查 mp_auth cookie（HMAC-SHA256，以 Token 为密钥，含过期时间戳）
-     有效 → 直接放行
-  2. 向本机 1Panel /api/v2/dashboard/base/os 转发请求 Cookie
-     返回 code=200 → 说明本机 1Panel 已登录
-     → 签发 mp_auth cookie（TTL=7天），放行
-  3. 否则 → 302 重定向到 1Panel 登录页（携带 mp_return 参数）
-```
+对 `text/html` 注入 `<script data-mp-hook="1">`：
+
+- 替换侧栏底部区域为节点切换按钮  
+- 轮询 `/__mp/api/agents` 渲染列表  
+- 选子节点 → 整页跳转 `/__mp/go/{id}`  
+- 「主节点」→ `/__mp/local`  
+- 「管理节点…」→ `/__mp/`  
 
 ---
 
-## 7. HTML 注入（侧边栏节点切换）
+## 9. Cookie 命名空间
 
-Master 对所有经过隧道/本地反代的 `text/html` 响应注入一段 `<script data-mp-hook="1">` 到 `</body>` 之前：
-
-- 在 1Panel Vue 侧边栏底部替换原生用户按钮为「节点切换」按钮
-- 点击弹出节点列表（轮询 `/__mp/api/agents`）
-- 选择节点 → 整页跳转到 `/__mp/go/{id}`（避开 Vue Router，因 1Panel 前端绝对路径 /assets 在前缀模式下失效）
-- 「主节点」选项 → 跳转 `/__mp/local`（清除 mp_node cookie）
-
----
-
-## 8. Cookie 命名空间隔离
-
-| 场景 | Cookie 名 | 说明 |
-|------|-----------|------|
-| 本机 1Panel 会话 | `psession` | 正常 1Panel 登录 cookie |
-| 远端 Agent 会话 | `mp_r_psession` | 远端会话，不覆盖本地 |
-| 节点选择 | `mp_node` | 当前激活的 Agent ID |
-| 管理页鉴权 | `mp_auth` | HMAC 签名，TTL 7天 |
-
-请求经隧道发往 Agent 时，`mp_r_*` 前缀自动剥除还原为原始 cookie 名。
+| 场景 | Cookie | 说明 |
+|------|--------|------|
+| 本机 1Panel | `psession` 等 | 不被远端覆盖 |
+| 远端 Agent | `mp_r_*` | 隧道发往 Agent 时剥前缀 |
+| 当前节点 | `mp_node` | Agent ID |
+| 管理页 | `mp_auth` | 内存 sessionSecret |

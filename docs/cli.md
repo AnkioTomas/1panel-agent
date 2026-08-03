@@ -1,95 +1,76 @@
 # CLI 命令参考
 
-## 二进制名称
-
-安装名 `1pm`（避免与官方 `/usr/bin/1panel-agent` 冲突）
+安装名 `1pm`（避免与官方 `/usr/bin/1panel-agent` 冲突）。版本由构建期注入：`-X 1panel-agent/internal/buildinfo.Version=...`。
 
 ---
 
 ## 顶层命令
 
-```
+```text
 1pm <command>
 
-命令：
-  master        启动 Master 节点
-  agent         Agent 子命令
-  version       显示版本
-  help          显示帮助
+  master                 启动 Master（takeover + 监听原面板端口）
+  master uninstall       仅卸载 Master（恢复端口、清状态、删二进制）
+  agent install …        安装时写入配置（不启动长连接）
+  agent run              用已有配置启动 Agent
+  agent setpwd […]      设置本机 1Panel 密码（AES-GCM 加密存储）
+  agent uninstall        仅卸载 Agent
+  uninstall              自动检测本机角色并卸载（推荐）
+  version | -v | --version
+  help  | -h | --help
 ```
 
 ---
 
 ## 1pm master
 
-启动 Master 网关（默认启用 takeover）。
+无额外参数。启动后：
+
+1. 若本机已装 Agent → 拒绝（角色互斥）  
+2. `EnsureTakeover`：把本机 1Panel 迁到内部端口，Master 监听原公网端口  
+3. Token 空则自动生成并写入 `/var/lib/1pm/master.json`
 
 ```bash
-1pm master [选项]
-
-选项：
-  --listen  <addr>      监听地址（默认自动使用原 1Panel 端口，如 :52045）
-  --token   <token>     覆盖隧道 Token（默认从 master.json 读取或自动生成）
-  --host    <host>      公网/NAT 地址覆盖（用于生成 Agent 安装命令）
-  --panel-user <user>   面板用户名（默认从 1pctl user-info 读取）
-  --panel-pass <pass>   面板密码（节点切换自动登录用）
-  --entrance <path>     安全入口路径（默认从 1panel user-info 读取）
-  --no-takeover         不执行端口接管
-  --upstream <url>      手动指定本机 1Panel 上游地址（如 http://127.0.0.1:62045）
+1pm master
 ```
 
-**systemd 示例**：
-
-```ini
-[Service]
-ExecStart=/usr/local/bin/1pm master
-```
+systemd：`ExecStart=/usr/local/bin/1pm master`
 
 ---
 
-## 1pm master set
+## 1pm uninstall
 
-修改 master.json 配置（不重启服务立即生效，重启后生效）。
-
-```bash
-1pm master set [选项]
-
-选项：
-  --host      <host>   设置公网地址
-  --panel-user <user>  设置面板用户名
-  --panel-pass <pass>  设置面板密码（节点切换自动登录必需）
-  --token     <token>  手动设置 Token
-  --entrance  <path>   设置安全入口
-```
-
-**典型用法**：
+按本机是否存在 Master unit/状态、Agent unit/配置自动清理；二进制只删一次。
 
 ```bash
-# 设置面板密码（节点切换自动登录必需）
-1pm master set --panel-pass 'MySecretPassword'
-
-# 设置 NAT 公网地址（生成的 Agent 安装命令使用此地址）
-1pm master set --host 1.2.3.4
+1pm uninstall
+1pm master uninstall
+1pm agent uninstall
 ```
+
+检测路径（与安装脚本一致）：
+
+| 角色 | 判定文件 |
+|------|----------|
+| Master | `/etc/systemd/system/1pm-master.service` 或 `/var/lib/1pm/master.json` |
+| Agent | `/etc/systemd/system/1pm-agent.service` 或 `/root/.1panel-agent/agent.json` |
 
 ---
 
 ## 1pm agent install
 
-安装时写入配置（不启动长连接）。面板 URL/用户名由 `1panel user-info` 自动探测。
+写入 Master/Token；面板 URL/用户/安全入口由 `1panel user-info` 自动探测。若本机已装 Master → 拒绝。
 
 ```bash
 1pm agent install <host:port> <token>
 1pm agent install <host:port>/<token>   # 兼容写法
 ```
 
-正常路径由 Master `/agent.sh` 在安装脚本里调用；systemd 只执行 `agent run`。
+正常由 `/agent.sh` 调用；systemd 只跑 `agent run`。
 
 ---
 
 ## 1pm agent run
-
-用已有配置启动 Agent（需先 `agent install`）。
 
 ```bash
 1pm agent run
@@ -99,7 +80,7 @@ ExecStart=/usr/local/bin/1pm master
 
 ## 1pm agent setpwd
 
-设置本机 1Panel 密码（AES-GCM 加密存储，密钥在 `~/.1panel-agent/secret.key`）。
+密码 AES-GCM 加密存储（密钥 `~/.1panel-agent/secret.key`），供隧道内自动登录子机 1Panel。
 
 ```bash
 1pm agent setpwd --password 'secret'
@@ -111,8 +92,10 @@ PANEL_PASS='secret' 1pm agent setpwd
 
 ## 配置文件位置
 
-| 角色 | 路径（root） | 路径（非 root） |
-|------|-------------|----------------|
-| Master 状态 | `/var/lib/1pm/master.json` | `~/.1panel-agent/master.json` |
-| Agent 配置 | `~/.1panel-agent/agent.json` | `~/.1panel-agent/agent.json` |
-| Agent 密钥 | `~/.1panel-agent/secret.key` | 同左 |
+| 角色 | 路径（root） |
+|------|-------------|
+| Master 状态 | `/var/lib/1pm/master.json` |
+| Agent 配置 | `/root/.1panel-agent/agent.json` |
+| Agent 密钥 | `/root/.1panel-agent/secret.key` |
+
+非 root 时 Master/Agent 配置落在 `~/.1panel-agent/`（仅开发/测试；生产安装脚本以 root 为准）。
