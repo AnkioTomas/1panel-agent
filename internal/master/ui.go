@@ -11,36 +11,32 @@ import (
 
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
+
+	// 1. 统一鉴权门禁：校验失败直接拦截（API 返 401，页面请求重定向）
+	if !s.ensureMPAuth(w, r, path) {
+		return
+	}
+
+	// 2. 特殊无感刷新接口
 	if path == "/touch" {
-		if s.localPanelLoggedIn(r) {
-			s.issueAuthCookie(w)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if path == "/api/agents" || path == "/api/upgrade-check" || path == "/api/rotate-token" {
-		if !s.validAuthCookie(r) && !s.localPanelLoggedIn(r) {
-			s.denyAPI(w, "unauthorized")
-			return
-		}
-		if !s.validAuthCookie(r) {
-			s.issueAuthCookie(w)
-		}
-		switch path {
-		case "/api/upgrade-check":
-			s.handleUpgradeCheck(w, r)
-		case "/api/rotate-token":
-			s.handleRotateToken(w, r)
-		default:
-			s.apiAgents(w, r)
-		}
+
+	// 3. API 路由分发
+	switch path {
+	case "/api/agents":
+		s.apiAgents(w, r)
+		return
+	case "/api/upgrade-check":
+		s.handleUpgradeCheck(w, r)
+		return
+	case "/api/rotate-token":
+		s.handleRotateToken(w, r)
 		return
 	}
-	if !s.requireMPAuth(w, r) {
-		return
-	}
+
+	// 4. UI 页面路由分发
 	if path == "" || path == "/" {
 		s.renderNodes(w, r)
 		return
