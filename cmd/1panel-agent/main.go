@@ -21,11 +21,6 @@ func main() {
 	case "master":
 		if len(os.Args) >= 3 {
 			switch os.Args[2] {
-			case "set":
-				if err := runMasterSet(os.Args[3:]); err != nil {
-					fatal(err)
-				}
-				return
 			case "uninstall":
 				if err := master.Uninstall(); err != nil {
 					fatal(err)
@@ -54,45 +49,13 @@ func main() {
 // runMaster 启动 Master 服务。
 func runMaster(args []string) error {
 	if len(args) > 0 {
-		return fmt.Errorf("master does not take arguments; use '1pm master set' to configure options")
+		return fmt.Errorf("master does not take arguments")
 	}
 	srv, err := master.New()
 	if err != nil {
 		return err
 	}
 	return srv.Run()
-}
-
-// runMasterSet 解析并保存 Master 配置。
-func runMasterSet(args []string) error {
-	st, err := config.LoadMasterOrEmpty()
-	if err != nil {
-		return err
-	}
-	changed := false
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			st.PanelPassword = args[i]
-			changed = true
-
-		default:
-			return fmt.Errorf("unknown master set flag: %s", args[i])
-		}
-	}
-	if !changed {
-		return fmt.Errorf("usage: 1pm master set --panel-pass P")
-	}
-	if err := config.SaveMaster(st); err != nil {
-		return err
-	}
-	path, _ := config.MasterPath()
-	fmt.Printf("master config saved: %s\n", path)
-	return nil
 }
 
 // runAgent 处理 agent 子命令（register/set/run/uninstall）。
@@ -122,9 +85,9 @@ func runAgent(args []string) error {
 	}
 }
 
-// runAgentSet 修改 Agent 的面板配置（panel-url, panel-key）。
+// runAgentSet 修改 Agent 的面板配置（panel-url, panel-key, panel-pass, panel-user）。
 func runAgentSet(args []string) error {
-	var panelURL, panelKey string
+	var panelURL, panelKey, panelUser, panelPassword string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--panel-url":
@@ -139,14 +102,26 @@ func runAgentSet(args []string) error {
 				return fmt.Errorf("--panel-key needs a value")
 			}
 			panelKey = args[i]
+		case "--panel-user":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-user needs a value")
+			}
+			panelUser = args[i]
+		case "--panel-pass":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--panel-pass needs a value")
+			}
+			panelPassword = args[i]
 		default:
 			return fmt.Errorf("unknown set flag: %s", args[i])
 		}
 	}
-	if panelURL == "" && panelKey == "" {
-		return fmt.Errorf("usage: agent set --panel-url URL [--panel-key KEY]")
+	if panelURL == "" && panelKey == "" && panelUser == "" && panelPassword == "" {
+		return fmt.Errorf("usage: agent set [--panel-url URL] [--panel-key KEY] [--panel-pass PASS] [--panel-user USER]")
 	}
-	if err := agent.SetPanel(panelURL, panelKey); err != nil {
+	if err := agent.SetPanel(panelURL, panelKey, panelUser, panelPassword); err != nil {
 		return err
 	}
 	path, _ := config.Path()
@@ -160,7 +135,6 @@ func usage() {
 
 Usage:
   1pm master                          start master (systemd: ExecStart=/usr/local/bin/1pm master)
-  1pm master set --panel-pass PASS    configure panel password for node-switch
   1pm master uninstall                stop service, restore 1Panel port, remove state & binary
 
   1pm agent register host:port/token  register and start agent
@@ -170,7 +144,7 @@ Usage:
   1pm version
 
 Master UI: http://<master>:<panel-port>/__mp/
-  Auth = your 1Panel browser session (no password stored by 1pm).
+  Auth = transparent proxy (no password stored by 1pm).
 `, version)
 }
 

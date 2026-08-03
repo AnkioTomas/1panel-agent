@@ -22,11 +22,10 @@ const masterFileName = "master.json"
 
 // Master 定义了 Master 节点的配置结构。
 type Master struct {
-	Token         string `json:"token"`
-	OriginalPort  int    `json:"original_port"`
-	InternalPort  int    `json:"internal_port"`
-	PanelPassword string `json:"panel_password,omitempty"` // only for node-switch auto-login
-	PublicHost    string `json:"public_host,omitempty"`    // optional NAT override; default = request Host
+	Token        string `json:"token"`
+	OriginalPort int    `json:"original_port"`
+	InternalPort int    `json:"internal_port"`
+	PublicHost   string `json:"public_host,omitempty"` // optional NAT override; default = request Host
 }
 
 // MasterPath 返回 Master 配置文件路径（root 用户下默认为 /var/lib/1pm/master.json）。

@@ -27,7 +27,6 @@ type Server struct {
 	PublicHost string
 	Entrance   string
 	PanelUser  string
-	PanelPass  string
 	LocalPanel string // http://127.0.0.1:internal
 	reg        *Registry
 	localProxy *httputil.ReverseProxy
@@ -57,17 +56,12 @@ func New() (*Server, error) {
 		_ = config.SaveMaster(state)
 	}
 
-	if state.PanelPassword == "" {
-		log.Printf("warn: panel password not set — run: 1pm master set --panel-pass PASS (needed for node switch login)")
-	}
-
 	s := &Server{
 		Listen:     listen,
 		Token:      state.Token,
 		PublicHost: state.PublicHost,
 		Entrance:   entrance,
 		PanelUser:  panelUser,
-		PanelPass:  state.PanelPassword,
 		LocalPanel: localPanel,
 		reg:        NewRegistry(),
 	}
