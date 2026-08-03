@@ -367,8 +367,8 @@ func (s *Server) listenPort() string {
 	if port != "" {
 		return port
 	}
-	if strings.HasPrefix(s.Listen, ":") {
-		return strings.TrimPrefix(s.Listen, ":")
+	if after, ok := strings.CutPrefix(s.Listen, ":"); ok {
+		return after
 	}
 	return "80"
 }
