@@ -79,7 +79,7 @@ jobs:
           body: |
             ## Install Master
 
-            **推荐（钉版本，避免 jsDelivr @main 缓存）**
+      
             ```bash
             curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@${{ steps.ver.outputs.version }}/install.sh | sudo bash
             ```
