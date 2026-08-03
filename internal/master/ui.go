@@ -183,110 +183,208 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 
 // nodesTmpl 是 /__mp/ 管理页 HTML 模板。
 var nodesTmpl = template.Must(template.New("nodes").Parse(`<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>多机节点 - 1Panel</title>
+<script>
+(function(){
+  function panelTheme(){
+    try{
+      var raw=localStorage.getItem('GlobalState');
+      if(!raw) return '';
+      var st=JSON.parse(raw);
+      var t=(st&&st.themeConfig&&st.themeConfig.theme)||'';
+      return t==='dark'||t==='light'||t==='auto' ? t : '';
+    }catch(e){ return ''; }
+  }
+  function resolve(mode){
+    if(mode==='dark'||mode==='light') return mode;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function apply(){
+    var mode=resolve(panelTheme()||'auto');
+    document.documentElement.className=mode;
+    document.documentElement.style.colorScheme=mode;
+  }
+  apply();
+  try{
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+      var t=panelTheme();
+      if(!t || t==='auto') apply();
+    });
+  }catch(e){}
+  window.addEventListener('storage', function(ev){
+    if(ev.key==='GlobalState') apply();
+  });
+})();
+</script>
 <style>
-:root{
-  --el-color-primary:#409EFF;
-  --el-color-primary-dark:#337ecc;
-  --panel-primary:#005eeb;
-  --bg-page:#f2f3f5;
-  --bg-card:#ffffff;
-  --text-primary:#303133;
-  --text-regular:#606266;
-  --text-secondary:#909399;
-  --border:#e4e7ed;
-  --success:#67c23a;
-  --shadow:0 1px 4px rgba(0,21,41,.08);
-  --radius:6px;
+/* 对齐 1Panel / Element Plus 变量；html.light / html.dark 切换 */
+html.light, :root{
+  --el-color-primary:#005eeb;
+  --el-color-primary-dark-2:#0052cc;
+  --el-color-primary-light-3:#4d8ef0;
+  --el-color-primary-light-5:#80aef5;
+  --el-color-primary-light-7:#b3cef9;
+  --el-color-primary-light-8:#cce0fb;
+  --el-color-primary-light-9:#e6f0fd;
+  --el-color-success:#67c23a;
+  --el-color-danger:#f56c6c;
+  --el-bg-color:#ffffff;
+  --el-bg-color-page:#f0f2f5;
+  --el-bg-color-overlay:#ffffff;
+  --el-text-color-primary:#303133;
+  --el-text-color-regular:#606266;
+  --el-text-color-secondary:#909399;
+  --el-text-color-placeholder:#a8abb2;
+  --el-border-color:#dcdfe6;
+  --el-border-color-light:#e4e7ed;
+  --el-border-color-lighter:#ebeef5;
+  --el-fill-color:#f0f2f5;
+  --el-fill-color-light:#f5f7fa;
+  --el-fill-color-blank:#ffffff;
+  --el-mask-color:rgba(255,255,255,.9);
+  --mp-shadow:0 1px 4px rgba(0,21,41,.08);
+  --mp-radius:4px;
+  --mp-success-bg:#f0f9eb;
+  --mp-success-border:#e1f3d8;
+  --mp-success-text:#67c23a;
+  --mp-danger-bg:#fef0f0;
+  --mp-danger-border:#fde2e2;
+  --mp-danger-text:#f56c6c;
+}
+html.dark{
+  --el-color-primary:#3d8eff;
+  --el-color-primary-dark-2:#3d8eff;
+  --el-color-primary-light-3:#3364ad;
+  --el-color-primary-light-5:#372e46;
+  --el-color-primary-light-7:#2d4a7a;
+  --el-color-primary-light-8:#2a4066;
+  --el-color-primary-light-9:#2e313d;
+  --el-color-success:#3fb950;
+  --el-color-danger:#e2324f;
+  --el-bg-color:#2e313d;
+  --el-bg-color-page:#242633;
+  --el-bg-color-overlay:#2e313d;
+  --el-text-color-primary:#c0c2cf;
+  --el-text-color-regular:#c0c2cf;
+  --el-text-color-secondary:#9597a4;
+  --el-text-color-placeholder:#787b88;
+  --el-border-color:#434552;
+  --el-border-color-light:#434552;
+  --el-border-color-lighter:#434552;
+  --el-fill-color:#242633;
+  --el-fill-color-light:#2e313d;
+  --el-fill-color-blank:#2e313d;
+  --el-mask-color:rgba(36,38,51,.9);
+  --mp-shadow:0 1px 4px rgba(0,0,0,.35);
+  --mp-success-bg:#1f3a2a;
+  --mp-success-border:#2d5a3d;
+  --mp-success-text:#3fb950;
+  --mp-danger-bg:#3a2428;
+  --mp-danger-border:#5a3038;
+  --mp-danger-text:#e9657b;
 }
 *{box-sizing:border-box}
 body{
   margin:0;
   min-height:100vh;
   font-family:Helvetica Neue,Helvetica,PingFang SC,Hiragino Sans GB,Microsoft YaHei,Arial,sans-serif;
-  background:var(--bg-page);
-  color:var(--text-primary);
+  background:var(--el-bg-color-page);
+  color:var(--el-text-color-primary);
+  transition:background-color .2s,color .2s;
 }
 .topbar{
   height:56px;
-  background:#fff;
-  border-bottom:1px solid var(--border);
+  background:var(--el-bg-color);
+  border-bottom:1px solid var(--el-border-color-light);
   display:flex;align-items:center;justify-content:space-between;
   padding:0 20px;
-  box-shadow:var(--shadow);
+  box-shadow:var(--mp-shadow);
 }
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px}
-.brand svg{color:var(--panel-primary)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;color:var(--el-text-color-primary)}
+.brand svg{color:var(--el-color-primary)}
 .device{
   display:flex;align-items:center;gap:8px;
-  color:var(--text-regular);font-size:13px;
-  background:#f5f7fa;border:1px solid var(--border);
+  color:var(--el-text-color-regular);font-size:13px;
+  background:var(--el-fill-color-light);border:1px solid var(--el-border-color-light);
   border-radius:20px;padding:6px 12px;
 }
-.device strong{color:var(--panel-primary);font-weight:600}
+.device strong{color:var(--el-color-primary);font-weight:600}
 .wrap{max-width:1080px;margin:0 auto;padding:20px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
 .stat{
-  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
-  padding:16px 18px;box-shadow:var(--shadow);
+  background:var(--el-bg-color);border:1px solid var(--el-border-color-light);border-radius:var(--mp-radius);
+  padding:16px 18px;box-shadow:var(--mp-shadow);
 }
-.stat .label{color:var(--text-secondary);font-size:13px;margin-bottom:8px}
-.stat .value{font-size:22px;font-weight:600;color:var(--text-primary)}
-.stat .value.ip{font-size:18px;color:var(--panel-primary);letter-spacing:.3px}
+.stat .label{color:var(--el-text-color-secondary);font-size:13px;margin-bottom:8px}
+.stat .value{font-size:22px;font-weight:600;color:var(--el-text-color-primary)}
 .card{
-  background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
-  box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden;
+  background:var(--el-bg-color);border:1px solid var(--el-border-color-light);border-radius:var(--mp-radius);
+  box-shadow:var(--mp-shadow);margin-bottom:16px;overflow:hidden;
 }
 .card-hd{
-  padding:14px 18px;border-bottom:1px solid var(--border);
+  padding:14px 18px;border-bottom:1px solid var(--el-border-color-lighter);
   display:flex;align-items:center;justify-content:space-between;gap:12px;
 }
-.card-hd h2{margin:0;font-size:15px;font-weight:600}
+.card-hd h2{margin:0;font-size:15px;font-weight:600;color:var(--el-text-color-primary)}
 .card-bd{padding:18px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1}
+.field > span{font-size:12px;color:var(--el-text-color-secondary)}
+.field input,.mp-input{
+  padding:8px 10px;border:1px solid var(--el-border-color);border-radius:var(--mp-radius);
+  background:var(--el-fill-color-blank);color:var(--el-text-color-primary);font:inherit;
+  outline:none;transition:border-color .15s;
+}
+.field input:focus,.mp-input:focus{border-color:var(--el-color-primary)}
+.field input::placeholder{color:var(--el-text-color-placeholder)}
+.meta-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px}
 .cmd{display:flex;gap:10px;align-items:stretch}
 .cmd code{
-  flex:1;background:#f5f7fa;border:1px solid var(--border);border-radius:var(--radius);
-  padding:10px 12px;font-size:13px;color:var(--text-regular);overflow:auto;white-space:nowrap;
+  flex:1;background:var(--el-fill-color-light);border:1px solid var(--el-border-color-light);border-radius:var(--mp-radius);
+  padding:10px 12px;font-size:13px;color:var(--el-text-color-regular);overflow:auto;white-space:nowrap;
   font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
 }
 .btn{
-  border:1px solid transparent;border-radius:var(--radius);
+  border:1px solid transparent;border-radius:var(--mp-radius);
   background:var(--el-color-primary);color:#fff;
   padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;
   text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;
-  line-height:1.4;white-space:nowrap;
+  line-height:1.4;white-space:nowrap;transition:background .15s,border-color .15s,color .15s;
 }
-.btn:hover{background:var(--el-color-primary-dark)}
+.btn:hover{background:var(--el-color-primary-dark-2)}
 .btn.plain{
-  background:#fff;color:var(--text-regular);border-color:var(--border);
+  background:var(--el-bg-color);color:var(--el-text-color-regular);border-color:var(--el-border-color);
 }
-.btn.plain:hover{color:var(--el-color-primary);border-color:var(--el-color-primary-light-5,#a0cfff);background:#ecf5ff}
-.btn.primary-panel{background:var(--panel-primary)}
-.btn.primary-panel:hover{background:#0052cc}
+.btn.plain:hover{color:var(--el-color-primary);border-color:var(--el-color-primary-light-5);background:var(--el-color-primary-light-9)}
+.btn.primary-panel{background:var(--el-color-primary)}
+.btn.primary-panel:hover{background:var(--el-color-primary-dark-2)}
 .btn:disabled{opacity:.6;cursor:not-allowed}
-.meta{margin:10px 0 0;color:var(--text-secondary);font-size:12px}
+.meta{margin:10px 0 0;color:var(--el-text-color-secondary);font-size:12px}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
-th{color:var(--text-secondary);font-weight:500;background:#fafafa}
+th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--el-border-color-lighter);font-size:13px;vertical-align:middle;color:var(--el-text-color-regular)}
+th{color:var(--el-text-color-secondary);font-weight:500;background:var(--el-fill-color-light)}
+tr:hover td{background:var(--el-fill-color-light)}
 tr:last-child td{border-bottom:0}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);margin-right:6px}
+tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font-weight:600;color:var(--el-text-color-regular)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--el-color-success);margin-right:6px}
 .tag{
   display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;
-  background:#f0f9eb;color:#67c23a;font-size:12px;border:1px solid #e1f3d8;
+  background:var(--mp-success-bg);color:var(--mp-success-text);font-size:12px;border:1px solid var(--mp-success-border);
 }
-.empty{color:var(--text-secondary);padding:24px 0;text-align:center;font-size:13px}
+.empty{color:var(--el-text-color-secondary);padding:24px 0;text-align:center;font-size:13px}
 .actions{display:flex;flex-wrap:wrap;gap:10px}
+.muted{color:var(--el-text-color-secondary)}
 .toast{
-  position:fixed;right:20px;bottom:20px;background:#f0f9eb;color:#529b2e;
-  border:1px solid #e1f3d8;padding:10px 14px;border-radius:var(--radius);
+  position:fixed;right:20px;bottom:20px;background:var(--mp-success-bg);color:var(--mp-success-text);
+  border:1px solid var(--mp-success-border);padding:10px 14px;border-radius:var(--mp-radius);
   opacity:0;transform:translateY(8px);transition:.2s;font-size:13px;z-index:99;
 }
 .toast.show{opacity:1;transform:translateY(0)}
-.toast.err{background:#fef0f0;color:#f56c6c;border-color:#fde2e2}
+.toast.err{background:var(--mp-danger-bg);color:var(--mp-danger-text);border-color:var(--mp-danger-border)}
 @media (max-width:800px){
   .stats{grid-template-columns:1fr}
   .cmd{flex-direction:column}
@@ -329,14 +427,14 @@ tr:last-child td{border-bottom:0}
       <button class="btn plain" type="button" id="btnRotate" onclick="rotateToken()">轮换 Token</button>
     </div>
     <div class="card-bd">
-      <div class="meta-row" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px">
-        <label style="display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1">
-          <span class="label" style="font-size:12px;color:var(--text-secondary)">节点名称</span>
-          <input id="nodeName" type="text" maxlength="64" placeholder="如：机房A-web1" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit;font:inherit">
+      <div class="meta-row">
+        <label class="field">
+          <span>节点名称</span>
+          <input id="nodeName" class="mp-input" type="text" maxlength="64" placeholder="如：机房A-web1">
         </label>
-        <label style="display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1">
-          <span class="label" style="font-size:12px;color:var(--text-secondary)">节点分组</span>
-          <input id="nodeGroup" type="text" maxlength="64" placeholder="如：生产 / 测试" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit;font:inherit">
+        <label class="field">
+          <span>节点分组</span>
+          <input id="nodeGroup" class="mp-input" type="text" maxlength="64" placeholder="如：生产 / 测试">
         </label>
       </div>
       <div class="cmd">
@@ -373,7 +471,7 @@ tr:last-child td{border-bottom:0}
           <tr data-agent-id="{{.ID}}">
             <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
             <td>{{.DisplayName}}</td>
-            <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
+            <td class="muted">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
             <td>{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</td>
             <td>{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
             <td class="col-cpu">{{printf "%.1f%%" .CPUPercent}}</td>
@@ -610,7 +708,7 @@ function renderAgents(list){
     const g=groupLabel(a);
     if(g!==lastGroup){
       lastGroup=g;
-      rows+='<tr class="group-row"><td colspan="8" style="padding:10px 18px;background:rgba(0,0,0,.03);font-weight:600;color:var(--text-regular)">'+esc(g)+'</td></tr>';
+      rows+='<tr class="group-row"><td colspan="8">'+esc(g)+'</td></tr>';
     }
     const ip=a.remote_ip||'-';
     const av=a.agent_version||'-';
@@ -620,7 +718,7 @@ function renderAgents(list){
     rows+='<tr data-agent-id="'+esc(a.id||'')+'">' +
       '<td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>'+
       '<td>'+esc(displayName(a))+'</td>'+
-      '<td style="color:var(--text-secondary)">'+esc(ip)+'</td>'+
+      '<td class="muted">'+esc(ip)+'</td>'+
       '<td>'+esc(av)+'</td>'+
       '<td>'+esc(pv)+'</td>'+
       '<td class="col-cpu">'+fmtCPU(a.cpu_percent)+'</td>'+

@@ -61,23 +61,59 @@ function ensureStyle(){
   var st=document.createElement("style");
   st.id="mp-node-style";
   st.textContent=
-    "#mp-node-switch{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;box-sizing:border-box;cursor:pointer;user-select:none;color:inherit;border:0;background:transparent;text-align:left;font:inherit;}"+
-    "#mp-node-switch:hover{background:rgba(0,94,235,.06);}"+
-    "#mp-node-switch .mp-ns-icon{flex:0 0 18px;opacity:.9;}"+
+    "#mp-node-switch{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;box-sizing:border-box;cursor:pointer;user-select:none;color:var(--el-text-color-primary,inherit);border:0;background:transparent;text-align:left;font:inherit;border-radius:4px;transition:background .15s;}"+
+    "#mp-node-switch:hover{background:var(--el-fill-color-light,rgba(0,0,0,.04));}"+
+    "#mp-node-switch .mp-ns-avatar{flex:0 0 28px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--el-color-primary-light-9,#e6f0fd);color:var(--el-color-primary,#005eeb);}"+
+    "#mp-node-switch .mp-ns-avatar svg{display:block;}"+
     "#mp-node-switch .mp-ns-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;line-height:1.25;}"+
-    "#mp-node-switch .mp-ns-title{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
-    "#mp-node-switch .mp-ns-ip{font-size:12px;opacity:.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
-    "#mp-node-switch .mp-ns-caret{flex:0 0 12px;opacity:.55;font-size:12px;}"+
+    "#mp-node-switch .mp-ns-title{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
+    "#mp-node-switch .mp-ns-ip{font-size:12px;color:var(--el-text-color-secondary,#909399);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
+    "#mp-node-switch .mp-ns-caret{flex:0 0 14px;color:var(--el-text-color-secondary,#909399);display:flex;align-items:center;justify-content:center;transition:transform .15s;}"+
+    "#mp-node-switch.is-open .mp-ns-caret{transform:rotate(180deg);}"+
     ".mp-ns-native-hide{display:none!important;}"+
-    "#mp-node-pop{position:fixed;z-index:4000;min-width:200px;max-width:280px;max-height:360px;overflow:auto;background:var(--el-bg-color, #fff);color:var(--el-text-color-primary,#303133);border:1px solid var(--el-border-color-light,#e4e7ed);border-radius:6px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:6px 0;}"+
-    "#mp-node-pop .mp-ns-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 14px;cursor:pointer;font-size:13px;line-height:1.25;}"+
-    "#mp-node-pop .mp-ns-item:hover{background:rgba(0,94,235,.08);}"+
-    "#mp-node-pop .mp-ns-item.is-active{color:var(--el-color-primary,#409EFF);font-weight:600;}"+
-    "#mp-node-pop .mp-ns-item .mp-ns-sub{font-size:12px;opacity:.55;font-weight:400;}"+
-    "#mp-node-pop .mp-ns-sep{height:1px;margin:6px 0;background:var(--el-border-color-lighter,#ebeef5);}"+
-    "#mp-node-pop .mp-ns-group{padding:6px 14px 2px;font-size:11px;opacity:.55;font-weight:600;letter-spacing:.02em;}"+
-    "#mp-node-pop .mp-ns-empty{padding:10px 14px;font-size:12px;opacity:.6;}";
+    "#mp-node-pop{position:fixed;z-index:4000;min-width:220px;max-width:300px;max-height:min(420px,70vh);overflow:auto;background:var(--el-bg-color-overlay,var(--el-bg-color,#fff));color:var(--el-text-color-primary,#303133);border:1px solid var(--el-border-color-light,#e4e7ed);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:6px;}"+
+    "#mp-node-pop .mp-ns-hd{padding:8px 10px 6px;font-size:12px;font-weight:600;color:var(--el-text-color-secondary,#909399);letter-spacing:.02em;}"+
+    "#mp-node-pop .mp-ns-item{display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;font-size:13px;line-height:1.3;color:var(--el-text-color-regular,inherit);border-radius:6px;transition:background .12s,color .12s;}"+
+    "#mp-node-pop .mp-ns-item:hover{background:var(--el-fill-color-light,rgba(0,0,0,.04));}"+
+    "#mp-node-pop .mp-ns-item.is-active{color:var(--el-color-primary,#005eeb);background:var(--el-color-primary-light-9,#e6f0fd);}"+
+    "#mp-node-pop .mp-ns-item.is-danger{color:var(--el-color-danger,#f56c6c);}"+
+    "#mp-node-pop .mp-ns-item.is-danger:hover{background:var(--el-color-danger-light-9,#fef0f0);}"+
+    "#mp-node-pop .mp-ns-ico{flex:0 0 28px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--el-fill-color-light,#f5f7fa);color:var(--el-text-color-secondary,#909399);}"+
+    "#mp-node-pop .mp-ns-item.is-active .mp-ns-ico{background:var(--el-color-primary,#005eeb);color:#fff;}"+
+    "#mp-node-pop .mp-ns-item.is-master .mp-ns-ico{background:var(--el-color-primary-light-9,#e6f0fd);color:var(--el-color-primary,#005eeb);}"+
+    "#mp-node-pop .mp-ns-item.is-master.is-active .mp-ns-ico{background:var(--el-color-primary,#005eeb);color:#fff;}"+
+    "#mp-node-pop .mp-ns-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}"+
+    "#mp-node-pop .mp-ns-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}"+
+    "#mp-node-pop .mp-ns-sub{font-size:12px;color:var(--el-text-color-secondary,#909399);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"+
+    "#mp-node-pop .mp-ns-check{flex:0 0 16px;width:16px;height:16px;opacity:0;color:var(--el-color-primary,#005eeb);}"+
+    "#mp-node-pop .mp-ns-item.is-active .mp-ns-check{opacity:1;}"+
+    "#mp-node-pop .mp-ns-badge{display:inline-flex;align-items:center;margin-left:6px;padding:0 5px;height:16px;border-radius:4px;font-size:10px;font-weight:600;line-height:16px;background:var(--el-color-primary-light-8,#cce0fb);color:var(--el-color-primary,#005eeb);vertical-align:middle;}"+
+    "#mp-node-pop .mp-ns-item.is-active .mp-ns-badge{background:var(--el-color-primary,#005eeb);color:#fff;}"+
+    "#mp-node-pop .mp-ns-sep{height:1px;margin:6px 4px;background:var(--el-border-color-lighter,#ebeef5);}"+
+    "#mp-node-pop .mp-ns-group{padding:8px 10px 4px;font-size:11px;color:var(--el-text-color-secondary,#909399);font-weight:600;letter-spacing:.02em;}"+
+    "#mp-node-pop .mp-ns-empty{padding:12px 10px;font-size:12px;color:var(--el-text-color-secondary,#909399);text-align:center;}"+
+    "html.dark #mp-node-pop .mp-ns-item.is-danger:hover{background:rgba(226,50,79,.12);}"+
+    "html.dark #mp-node-pop{box-shadow:0 8px 24px rgba(0,0,0,.45);}";
   document.head.appendChild(st);
+}
+
+function svgIco(kind){
+  if(kind==="master") return '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/></svg>';
+  if(kind==="node") return '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 2a3 3 0 0 1 3 3v1h3a2 2 0 0 1 2 2v3h-1a2 2 0 1 0 0 4h1v3a2 2 0 0 1-2 2h-3v1a3 3 0 1 1-6 0v-1H6a2 2 0 0 1-2-2v-3h1a2 2 0 1 0 0-4H4V8a2 2 0 0 1 2-2h3V5a3 3 0 0 1 3-3z"/></svg>';
+  if(kind==="manage") return '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94a7.5 7.5 0 0 0 .05-.94 7.5 7.5 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.2 7.2 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.48a.5.5 0 0 0 .12.64L4.86 9.7A7.5 7.5 0 0 0 4.8 12c0 .32.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .49.42h3.8a.5.5 0 0 0 .49-.42l.36-2.54c.58-.23 1.12-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.02-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>';
+  if(kind==="logout") return '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M10 4a1 1 0 0 1 1 1v6h6.59l-1.3-1.3a1 1 0 1 1 1.42-1.4l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.42-1.4L17.59 13H11v6a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5z"/></svg>';
+  return '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9.7 16.3a1 1 0 0 1-1.4 0l-3.3-3.3a1 1 0 1 1 1.4-1.4L9 14.17l7.3-7.3a1 1 0 0 1 1.4 1.42l-8 8z"/></svg>';
+}
+function menuItem(attrs, ico, name, sub, active, extraClass){
+  var cls="mp-ns-item"+(extraClass?(" "+extraClass):"")+(active?" is-active":"");
+  var html='<div class="'+cls+'" '+attrs+'>';
+  html+='<span class="mp-ns-ico">'+svgIco(ico)+'</span>';
+  html+='<span class="mp-ns-body"><span class="mp-ns-name">'+name+"</span>";
+  if(sub) html+='<span class="mp-ns-sub">'+sub+"</span>";
+  html+="</span>";
+  html+='<span class="mp-ns-check">'+svgIco("check")+"</span>";
+  html+="</div>";
+  return html;
 }
 
 function findNativeTrigger(){
@@ -124,6 +160,8 @@ function labelParts(agents){
 function closePop(){
   var p=document.getElementById("mp-node-pop");
   if(p) p.remove();
+  var btn=document.getElementById("mp-node-switch");
+  if(btn) btn.classList.remove("is-open");
   document.removeEventListener("click", onDocClick, true);
 }
 
@@ -142,11 +180,15 @@ function go(url){
 
 function renderPop(btn, agents){
   closePop();
+  btn.classList.add("is-open");
   var pop=document.createElement("div");
   pop.id="mp-node-pop";
   var id=currentID();
   var html="";
-  html+='<div class="mp-ns-item'+(id?"":" is-active")+'" data-mp="local"><span>主节点</span>'+(MASTER_IP&&MASTER_IP!=="-"?'<span class="mp-ns-sub">'+MASTER_IP+"</span>":"")+"</div>";
+  html+='<div class="mp-ns-hd">切换节点</div>';
+  var masterName='主节点<span class="mp-ns-badge">主</span>';
+  var masterSub=(MASTER_IP&&MASTER_IP!=="-")?MASTER_IP:"";
+  html+=menuItem('data-mp="local"', "master", masterName, masterSub, !id, "is-master");
   if(!agents || !agents.length){
     html+='<div class="mp-ns-empty">暂无在线 Agent</div>';
   } else {
@@ -164,21 +206,16 @@ function renderPop(btn, agents){
         last=g;
         html+='<div class="mp-ns-group">'+g+"</div>";
       }
-      var active=id===a.id?" is-active":"";
-      var title=agentTitle(a);
-      var sub=a.remote_ip||"";
-      html+='<div class="mp-ns-item'+active+'" data-mp="go" data-id="'+a.id+'"><span>'+title+"</span>"+(sub?'<span class="mp-ns-sub">'+sub+"</span>":"")+"</div>";
+      html+=menuItem('data-mp="go" data-id="'+a.id+'"', "node", agentTitle(a), a.remote_ip||"", id===a.id, "");
     }
   }
   html+='<div class="mp-ns-sep"></div>';
-  html+='<div class="mp-ns-item" data-mp="manage"><span>管理节点…</span></div>';
-  html+='<div class="mp-ns-item" data-mp="logout"><span>退出登录</span></div>';
+  html+=menuItem('data-mp="manage"', "manage", "管理节点", "安装 / 更新 / 分组", false, "");
+  html+=menuItem('data-mp="logout"', "logout", "退出登录", "", false, "is-danger");
   pop.innerHTML=html;
   document.body.appendChild(pop);
   var rect=btn.getBoundingClientRect();
-  var top=rect.top - 8;
   pop.style.left=Math.max(8, rect.left)+"px";
-  // Prefer opening upward above the button (sidebar footer).
   requestAnimationFrame(function(){
     var h=pop.offsetHeight||240;
     var y=rect.top - h - 6;
@@ -264,14 +301,16 @@ function mountSwitch(){
   btn.id="mp-node-switch";
   btn.title="切换节点";
   btn.innerHTML=
-    '<svg class="mp-ns-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'+
-      '<path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>'+
-    '</svg>'+
+    '<span class="mp-ns-avatar">'+
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'+
+        '<path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>'+
+      '</svg>'+
+    '</span>'+
     '<span class="mp-ns-text">'+
       '<span class="mp-ns-title">主节点</span>'+
       '<span class="mp-ns-ip"></span>'+
     '</span>'+
-    '<span class="mp-ns-caret">▾</span>';
+    '<span class="mp-ns-caret"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M7.4 9.3a1 1 0 0 1 1.4 0L12 12.5l3.2-3.2a1 1 0 1 1 1.4 1.4l-3.9 3.9a1 1 0 0 1-1.4 0L7.4 10.7a1 1 0 0 1 0-1.4z"/></svg></span>';
   host.parentNode.insertBefore(btn, host);
   bindSwitch(btn);
   return true;
