@@ -66,10 +66,11 @@ func TestAgentInstallScript(t *testing.T) {
 		"sign_query",
 		"/agent.bin?",
 		"agent install",
-		"agent run",
+		"ask_panel_password",
 		"agent setpwd",
+		"agent run",
 		"1pm-agent.service",
-		"systemctl restart",
+		"安装完成",
 	} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("script missing %q", needle)
@@ -78,7 +79,7 @@ func TestAgentInstallScript(t *testing.T) {
 	if strings.Contains(out, "agent register") {
 		t.Fatal("systemd must not call agent register")
 	}
-	if strings.Contains(out, "agent.bin?token=") {
-		t.Fatal("agent.bin must use signed query, not raw token")
+	if strings.Contains(out, "Enter to skip") {
+		t.Fatal("password must be required, not skippable")
 	}
 }

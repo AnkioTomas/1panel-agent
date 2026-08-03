@@ -2,19 +2,16 @@
 # 1pm Master one-click installer
 # Usage:
 #   curl -fsSL <script-url> | sudo bash
-#   curl -fsSL <script-url> | sudo PANEL_PASS='xxx' bash
 #   curl -fsSL <script-url> | sudo INSTALL_CDN=cn VERSION=v0.0.1 bash
 #
 # INSTALL_CDN:  auto (default) | global | cn
 # VERSION:      empty = latest GitHub release
-# PANEL_PASS:   optional; enables node-switch auto-login
 # REPO:         AnkioTomas/1panel-agent
 set -euo pipefail
 
 REPO="${REPO:-AnkioTomas/1panel-agent}"
 INSTALL_CDN="${INSTALL_CDN:-auto}"
 VERSION="${VERSION:-}"
-PANEL_PASS="${PANEL_PASS:-}"
 BIN_PATH="${BIN_PATH:-/usr/local/bin/1pm}"
 UNIT_PATH="${UNIT_PATH:-/etc/systemd/system/1pm-master.service}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
@@ -28,9 +25,14 @@ CN_MIRRORS=(
   "https://ghproxy.net/"
 )
 
-log()  { echo ">> $*"; }
+log()  { echo "==> $*"; }
 warn() { echo "warn: $*" >&2; }
 die()  { echo "error: $*" >&2; exit 1; }
+
+strip_ansi() {
+  # drop CSI sequences from 1panel/1pctl colored output
+  sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
+}
 
 need_root() {
   [[ "$(id -u)" -eq 0 ]] || die "run as root (curl ... | sudo bash)"
@@ -39,25 +41,27 @@ need_root() {
 # Master takeover requires a local 1Panel (detect via CLI, never poke core.db).
 require_1panel() {
   if ! have_cmd 1pctl && ! have_cmd 1panel; then
-    echo "error: 未检测到本机 1Panel（需要 1pctl / 1panel 命令），无法安装 Master。" >&2
-    echo >&2
-    echo "请先安装并启动 1Panel，再重新执行本脚本。" >&2
-    echo "  官方安装: https://1panel.cn / https://github.com/1Panel-dev/1Panel" >&2
-    exit 1
+    die "未检测到 1Panel（需要 1pctl/1panel）。请先安装: https://1panel.cn"
   fi
   if systemctl list-unit-files 1panel-core.service 2>/dev/null | grep -q 1panel-core.service; then
     if ! systemctl is-active --quiet 1panel-core.service; then
-      warn "检测到 1panel-core.service 但未运行，尝试启动…"
-      systemctl start 1panel-core.service || die "无法启动 1panel-core，请先修好 1Panel 再装 Master"
+      log "启动 1panel-core…"
+      systemctl start 1panel-core.service || die "无法启动 1panel-core"
       sleep 1
     fi
   fi
+  local ver=""
   if have_cmd 1pctl; then
     1pctl user-info >/dev/null 2>&1 || die "1pctl user-info 失败：面板未初始化或权限不足"
-    log "1Panel OK: $(1pctl version 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+    ver="$(1pctl version 2>/dev/null | strip_ansi | sed -n 's/.*[Vv]ersion[[:space:]]*:[[:space:]]*//p;s/.*版本[[:space:]]*:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
   else
     1panel -l en user-info >/dev/null 2>&1 || die "1panel user-info 失败：面板未初始化或权限不足"
-    log "1Panel OK: 1panel CLI"
+    ver="$(1panel -l en version 2>/dev/null | strip_ansi | sed -n 's/.*[Vv]ersion[[:space:]]*:[[:space:]]*//p;s/.*版本[[:space:]]*:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
+  fi
+  if [[ -n "$ver" ]]; then
+    log "1Panel ${ver}"
+  else
+    log "1Panel OK"
   fi
 }
 
@@ -179,15 +183,12 @@ pick_base_for_asset() {
   local tag="$1" file="$2" base url
   for base in $(candidate_bases "$INSTALL_CDN"); do
     url="${base}${REPO}/releases/download/${tag}/${file}"
-    log "probe $url"
     if http_ok "$url"; then
       echo "$base"
       return
     fi
   done
-  # last resort: try download anyway with first base (some mirrors break HEAD)
   base="$(candidate_bases "$INSTALL_CDN" | head -n1)"
-  warn "HEAD probe failed; falling back to $base"
   echo "$base"
 }
 
@@ -195,14 +196,12 @@ download_asset() {
   # download_asset BASE TAG FILE OUT [required=1]
   local base="$1" tag="$2" file="$3" out="$4" required="${5:-1}" url b
   url="${base}${REPO}/releases/download/${tag}/${file}"
-  log "download $file"
   if http_get "$url" "$out" 2>/dev/null; then
     return 0
   fi
   for b in $(candidate_bases "$INSTALL_CDN"); do
     [[ "$b" == "$base" ]] && continue
     url="${b}${REPO}/releases/download/${tag}/${file}"
-    log "retry $url"
     if http_get "$url" "$out" 2>/dev/null; then
       return 0
     fi
@@ -210,7 +209,6 @@ download_asset() {
   if [[ "$required" == "1" ]]; then
     die "download failed: $file"
   fi
-  warn "optional download failed: $file"
   return 1
 }
 
@@ -253,13 +251,6 @@ WantedBy=multi-user.target
 EOF
 }
 
-maybe_set_password() {
-  # Master 不再存面板密码；Agent 侧用 `1pm agent setpwd`。
-  if [[ -n "$PANEL_PASS" ]]; then
-    warn "PANEL_PASS 已忽略：Master 不存面板密码。Agent 安装时可交互/环境变量调用 setpwd"
-  fi
-}
-
 # Read key=value from master.json without requiring jq.
 json_str() {
   local key="$1" file="$2"
@@ -282,10 +273,22 @@ detect_lan_ip() {
   echo "${ip:-<本机IP>}"
 }
 
+# panel_entrance 从 1panel CLI 读安全入口路径段（master.json 不存该字段）。
+panel_entrance() {
+  local raw path
+  if have_cmd 1pctl; then
+    raw="$(1pctl user-info 2>/dev/null | strip_ansi)"
+  else
+    raw="$(1panel -l en user-info 2>/dev/null | strip_ansi)"
+  fi
+  path="$(printf '%s\n' "$raw" | sed -n 's|.*https\?://[^/]*/\([^[:space:]]*\).*|\1|p' | head -1)"
+  path="${path%/}"
+  echo "$path"
+}
+
 print_next_steps() {
   local ver="$1" state="/var/lib/1pm/master.json"
-  local host port entrance ui agent_hint
-  # give master a moment to write master.json after takeover
+  local host port entrance ui mp
   local i
   for i in 1 2 3 4 5; do
     [[ -f "$state" ]] && break
@@ -296,43 +299,30 @@ print_next_steps() {
   [[ -z "$host" ]] && host="$(detect_lan_ip)"
   port="$(json_num original_port "$state")"
   [[ -z "$port" ]] && port="<面板端口>"
-  entrance="$(json_str entrance "$state")"
+  entrance="$(panel_entrance)"
 
   if [[ -n "$entrance" ]]; then
     ui="http://${host}:${port}/${entrance}"
   else
     ui="http://${host}:${port}/"
   fi
-  agent_hint="http://${host}:${port}/__mp/"
+  mp="http://${host}:${port}/__mp/"
 
   echo
-  echo "========================================"
-  echo " 1pm Master 安装完成 (${ver})"
-  echo "========================================"
+  echo "安装完成  1pm ${ver}"
   echo
-  echo "接下来请按顺序操作："
-  echo
-  echo "  1) 浏览器打开本机 1Panel 并登录"
+  echo "  1. 登录本机 1Panel"
   echo "     ${ui}"
+  echo "  2. 打开多机管理"
+  echo "     ${mp}"
+  echo "  3. 复制「子节点安装命令」到 Agent 机器执行"
   echo
-  echo "  2) 登录后打开多机管理页"
-  echo "     ${agent_hint}"
-  echo "     （侧边栏「多机节点」也可进入）"
-  echo
-  echo "  3) 在管理页复制「子节点安装命令」"
-  echo "     到每台 Agent 机器以 root 执行（curl | bash）"
-  echo
-  echo "  4) 子节点上线后，点「进入面板」切换；"
-  echo "     子节点 1Panel 自己处理登录"
-  echo
-  echo "常用命令："
-  echo "  systemctl status 1pm-master"
-  echo "  journalctl -u 1pm-master -f"
-  echo "  # 升级/重装：重新执行本安装脚本即可"
-  echo
-  if ! systemctl is-active --quiet 1pm-master.service; then
-    warn "服务未处于 active，请检查: journalctl -u 1pm-master -e"
+  if systemctl is-active --quiet 1pm-master.service; then
+    echo "  服务: active"
+  else
+    warn "服务未 active，查看: journalctl -u 1pm-master -e"
   fi
+  echo
 }
 
 main() {
@@ -345,13 +335,14 @@ main() {
   arch="$(detect_arch)"
   asset="1pm_${os}_${arch}"
 
-  log "cdn=${INSTALL_CDN} repo=${REPO}"
   tag="$(resolve_version)"
+  log "安装 ${tag} (${os}/${arch})"
   tmpdir="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap 'rm -rf "'"$tmpdir"'"' EXIT
 
   base="$(pick_base_for_asset "$tag" "$asset")"
+  log "下载二进制…"
   download_asset "$base" "$tag" "$asset" "$tmpdir/$asset" 1
   download_asset "$base" "$tag" "checksums.txt" "$tmpdir/checksums.txt" 0 || true
   verify_checksum "$tmpdir" "$asset" "$tmpdir/checksums.txt"
@@ -359,15 +350,13 @@ main() {
   systemctl stop 1pm-master.service 2>/dev/null || true
   install -m 755 "$tmpdir/$asset" "$BIN_PATH"
   write_unit
-  maybe_set_password
 
   systemctl daemon-reload
-  systemctl enable 1pm-master.service
+  systemctl enable 1pm-master.service >/dev/null
   systemctl restart 1pm-master.service
   sleep 1
 
   ver="$("$BIN_PATH" version 2>/dev/null || echo "$tag")"
-  log "installed ${ver} -> $BIN_PATH"
   print_next_steps "$ver"
 }
 
