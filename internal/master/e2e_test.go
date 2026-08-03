@@ -104,7 +104,9 @@ echo 'User: testuser'
 	deadline := time.Now().Add(5 * time.Second)
 	var listBody string
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + masterAddr + "/__mp/")
+		req, _ := http.NewRequest(http.MethodGet, "http://"+masterAddr+"/__mp/api/agents", nil)
+		req.AddCookie(&http.Cookie{Name: "psession", Value: "1"})
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()

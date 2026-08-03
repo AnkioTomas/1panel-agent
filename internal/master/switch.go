@@ -9,29 +9,17 @@ import (
 	"1panel-agent/internal/protocol"
 )
 
-// handleSwitch 校验 Agent 在线后：暂存本机会话 → 预热远端自动登录 → 写入远端 psession → 进首页。
-//
-// 旧逻辑只设 mp_node 再跳安全入口：浏览器里仍是本机 psession，1Panel SPA 读错会话，
-// 第一次切节点必掉登录页；手动登录后才“碰巧”好了。
+// handleSwitch 校验 Agent 在线后设置 mp_node Cookie 并重定向到首页。
+// 不篡改或暂存主节点登录态 Cookie，避免多节点间切换覆盖与状态踩踏。
 func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request, id string) {
 	if id == "" {
 		http.Error(w, "missing agent id", http.StatusBadRequest)
 		return
 	}
-	sess, ok := s.reg.Get(id)
-	if !ok {
+	if _, ok := s.reg.Get(id); !ok {
 		http.Error(w, "agent offline", http.StatusBadGateway)
 		return
 	}
-
-	stashLocalPanelCookies(w, r)
-
-	remoteCookies, err := s.warmAgentSession(sess)
-	if err != nil {
-		http.Error(w, "agent auto-login failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	writePanelCookies(w, remoteCookies)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "mp_node",
@@ -40,15 +28,11 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request, id string)
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// 进首页，不进安全入口页：EntranceCode 由 Agent 侧请求头注入。
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// handleLocal 恢复本机会话，清掉远端/暂存 Cookie，切回本机 1Panel。
+// handleLocal 切回主节点 1Panel，清除 mp_node Cookie。
 func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
-	expirePanelCookies(w)
-	restoreLocalPanelCookies(w, r)
-
 	http.SetCookie(w, &http.Cookie{
 		Name:     "mp_node",
 		Value:    "",

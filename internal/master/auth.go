@@ -55,16 +55,18 @@ func (s *Server) validAuthCookie(r *http.Request) bool {
 
 // localPanelLoggedIn 代理向本地 1Panel 接口确认访问者是否已拥有合法的 1Panel 登录态。
 func (s *Server) localPanelLoggedIn(r *http.Request) bool {
-	if s.LocalPanel == "" {
+	return s.localPanelCodeOK(r.Header.Get("Cookie"))
+}
+
+func (s *Server) localPanelCodeOK(cookieHeader string) bool {
+	if s.LocalPanel == "" || cookieHeader == "" {
 		return false
 	}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(s.LocalPanel, "/")+"/api/v2/dashboard/base/os", nil)
 	if err != nil {
 		return false
 	}
-	if cookie := r.Header.Get("Cookie"); cookie != "" {
-		req.Header.Set("Cookie", cookie)
-	}
+	req.Header.Set("Cookie", cookieHeader)
 	if s.Entrance != "" {
 		req.Header.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(s.Entrance)))
 	}
@@ -94,14 +96,12 @@ func (s *Server) ensureMPAuth(w http.ResponseWriter, r *http.Request, path strin
 		return true
 	}
 
-	// 未授权请求处理
 	isAPI := path == "/touch" || strings.HasPrefix(path, "/api/")
 	if isAPI {
 		s.denyAPI(w, "unauthorized")
 		return false
 	}
 
-	// 页面请求重定向至本地 1Panel 登录页
 	target := "/"
 	if s.Entrance != "" {
 		target = "/" + strings.TrimPrefix(s.Entrance, "/")

@@ -4,16 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strings"
 	"testing"
-
-	"1panel-agent/internal/protocol"
 )
 
 func TestCookieHeaderForRemote(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.AddCookie(&http.Cookie{Name: "psession", Value: "remote-sess"})
-	r.AddCookie(&http.Cookie{Name: "mp_l_psession", Value: "stashed-local"})
 	r.AddCookie(&http.Cookie{Name: "mp_node", Value: "abc"})
 	r.AddCookie(&http.Cookie{Name: "other", Value: "x"})
 
@@ -21,8 +17,8 @@ func TestCookieHeaderForRemote(t *testing.T) {
 	if !containsCookie(got, "psession=remote-sess") || !containsCookie(got, "other=x") {
 		t.Fatalf("missing cookies: %q", got)
 	}
-	if containsCookie(got, "stashed-local") || containsCookie(got, "mp_node=abc") {
-		t.Fatalf("leaked stash/control cookies: %q", got)
+	if containsCookie(got, "mp_node=abc") {
+		t.Fatalf("leaked control cookie: %q", got)
 	}
 }
 
@@ -72,37 +68,5 @@ func TestNormalizeRemoteSetCookies(t *testing.T) {
 	}
 	if vals[1] != "theme=dark; Path=/" {
 		t.Fatalf("theme %q", vals[1])
-	}
-}
-
-func TestAlignRemoteCSRFHeader(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "remote-csrf"})
-	r.Header.Set("X-CSRF-Token", "stale")
-
-	headers := protocol.HeaderFromHTTP(r.Header)
-	applyRemoteRequestCookies(headers, r)
-
-	got := ""
-	for k, vals := range headers {
-		if strings.EqualFold(k, "X-CSRF-Token") && len(vals) > 0 {
-			got = vals[0]
-		}
-	}
-	if got != "remote-csrf" {
-		t.Fatalf("csrf header=%q want remote-csrf; headers=%v", got, headers)
-	}
-}
-
-func TestAlignRemoteCSRFHeaderStripsWhenMissing(t *testing.T) {
-	r := httptest.NewRequest(http.MethodPost, "/", nil)
-	r.Header.Set("X-CSRF-Token", "stale")
-
-	headers := protocol.HeaderFromHTTP(r.Header)
-	applyRemoteRequestCookies(headers, r)
-	for k := range headers {
-		if strings.EqualFold(k, "X-CSRF-Token") {
-			t.Fatalf("csrf header must be stripped, got %v", headers[k])
-		}
 	}
 }

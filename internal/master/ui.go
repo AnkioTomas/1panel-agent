@@ -13,18 +13,23 @@ import (
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
 
-	// 1. 统一鉴权门禁：校验失败直接拦截（API 返 401，页面请求重定向）
+	// 切回本机必须先于鉴权：此时浏览器里是远端 psession，
+	// localPanelLoggedIn 会失败并被踢去登录页，mp_l_* 永远得不到恢复。
+	if path == "/local" {
+		s.handleLocal(w, r)
+		return
+	}
+
+	// 统一鉴权门禁：校验失败直接拦截（API 返 401，页面请求重定向）
 	if !s.ensureMPAuth(w, r, path) {
 		return
 	}
 
-	// 2. 特殊无感刷新接口
 	if path == "/touch" {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	// 3. API 路由分发
 	switch path {
 	case "/api/agents":
 		s.apiAgents(w, r)
@@ -37,14 +42,11 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. UI 页面路由分发
 	if path == "" || path == "/" {
 		s.renderNodes(w, r)
 		return
 	}
 	switch {
-	case path == "/local":
-		s.handleLocal(w, r)
 	case strings.HasPrefix(path, "/go/"):
 		id := strings.TrimPrefix(path, "/go/")
 		id = strings.Trim(id, "/")
