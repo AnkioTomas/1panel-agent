@@ -8,7 +8,7 @@ import (
 	"1panel-agent/internal/panel"
 )
 
-// AutofillPanel reads local 1Panel listen address into agent config when possible.
+// AutofillPanel 尝试通过 1Panel CLI 读取本地 1Panel 端口并自动填充到配置中。
 func AutofillPanel(cfg *config.Agent) {
 	st, err := panel.ReadSettings()
 	if err != nil {
@@ -20,6 +20,7 @@ func AutofillPanel(cfg *config.Agent) {
 	log.Printf("detected local 1Panel %s", cfg.PanelURL)
 }
 
+// SetPanel 更新并保存 Agent 的面板 URL 及 Key 配置。
 func SetPanel(panelURL, panelKey string) error {
 	cfg, err := config.LoadOrEmpty()
 	if err != nil {

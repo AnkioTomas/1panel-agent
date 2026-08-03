@@ -11,8 +11,7 @@ import (
 
 const agentServiceFile = "/etc/systemd/system/1pm-agent.service"
 
-// Uninstall stops the agent service, removes config, and removes
-// the binary itself.
+// Uninstall 停止 agent 服务，清除配置文件并彻底删除二进制文件本身。
 func Uninstall() error {
 	quietExec("systemctl", "stop", "1pm-agent.service")
 	quietExec("systemctl", "disable", "1pm-agent.service")
@@ -34,6 +33,7 @@ func Uninstall() error {
 	return nil
 }
 
+// quietExec 静默执行 Shell 命令输出。
 func quietExec(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
@@ -41,6 +41,7 @@ func quietExec(name string, args ...string) {
 	_ = cmd.Run()
 }
 
+// removeSelfBin 移除自身二进制文件。
 func removeSelfBin() {
 	exe, err := os.Executable()
 	if err != nil {

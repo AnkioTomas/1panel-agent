@@ -22,10 +22,12 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// Client 封装了 Agent 与 Master 通信并代理本地 1Panel 的客户端结构。
 type Client struct {
 	Cfg *config.Agent
 }
 
+// Run 启动 Agent 客户端逻辑，维持与 Master 的长连接并处理自动重连。
 func Run(cfg *config.Agent) error {
 	c := &Client{Cfg: cfg}
 	backoff := time.Second

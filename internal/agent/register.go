@@ -7,7 +7,7 @@ import (
 	"1panel-agent/internal/config"
 )
 
-// ParseRegisterTarget parses "ip:port/token" or "host:port/token".
+// ParseRegisterTarget 解析 "host:port/token" 格式的注册目标地址与 Token。
 func ParseRegisterTarget(s string) (master, token string, err error) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "http://")
@@ -30,6 +30,7 @@ func ParseRegisterTarget(s string) (master, token string, err error) {
 	return master, token, nil
 }
 
+// RegisterAndRun 解析注册目标参数、更新配置文件并立即启动 Agent 客户端。
 func RegisterAndRun(target string) error {
 	master, token, err := ParseRegisterTarget(target)
 	if err != nil {
