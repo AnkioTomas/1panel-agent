@@ -348,7 +348,8 @@ main() {
   log "cdn=${INSTALL_CDN} repo=${REPO}"
   tag="$(resolve_version)"
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  # shellcheck disable=SC2064
+  trap 'rm -rf "'"$tmpdir"'"' EXIT
 
   base="$(pick_base_for_asset "$tag" "$asset")"
   download_asset "$base" "$tag" "$asset" "$tmpdir/$asset" 1
