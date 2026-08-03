@@ -13,6 +13,7 @@ import (
 	"1panel-agent/internal/panel"
 )
 
+// upgradeCheckItem 是单个节点（Master 或 Agent）的版本检查结果。
 type upgradeCheckItem struct {
 	ID      string `json:"id"`
 	Version string `json:"version"`
@@ -20,6 +21,7 @@ type upgradeCheckItem struct {
 	Latest  string `json:"latest,omitempty"`
 }
 
+// upgradeCheckResult 是 /api/upgrade-check 的完整响应。
 type upgradeCheckResult struct {
 	MasterVersion string             `json:"master_version"`
 	Latest        string             `json:"latest"`
@@ -28,12 +30,14 @@ type upgradeCheckResult struct {
 	Message       string             `json:"message,omitempty"`
 }
 
+// panelUpgradeInfo 对应本机 1Panel upgrade API 的 data 字段。
 type panelUpgradeInfo struct {
 	TestVersion   string `json:"testVersion"`
 	NewVersion    string `json:"newVersion"`
 	LatestVersion string `json:"latestVersion"`
 }
 
+// handleUpgradeCheck 查询本机与在线 Agent 相对最新版的状态。
 func (s *Server) handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -81,6 +85,7 @@ func (s *Server) handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// fetchPanelLatestVersion 复用浏览器本机 1Panel 会话，读取官方最新版本号。
 func (s *Server) fetchPanelLatestVersion(r *http.Request) (string, error) {
 	if s.LocalPanel == "" {
 		return "", fmt.Errorf("local panel not configured")
@@ -122,6 +127,7 @@ func (s *Server) fetchPanelLatestVersion(r *http.Request) (string, error) {
 	return latest, nil
 }
 
+// statusKnownLatest 在无最新候选时：有版本视为 latest，否则 unknown。
 func statusKnownLatest(current string) string {
 	if strings.TrimSpace(current) == "" {
 		return "unknown"
@@ -129,6 +135,7 @@ func statusKnownLatest(current string) string {
 	return "latest"
 }
 
+// statusFor 比较 current 与 latest，返回 latest / outdated / unknown。
 func statusFor(current, latest string) string {
 	current = strings.TrimSpace(current)
 	latest = strings.TrimSpace(latest)
@@ -145,7 +152,7 @@ func statusFor(current, latest string) string {
 	return "outdated"
 }
 
-// comparePanelVersion returns -1 if a<b, 0 if equal, 1 if a>b.
+// comparePanelVersion 比较版本号：a<b 返回 -1，相等 0，a>b 返回 1。
 func comparePanelVersion(a, b string) int {
 	as := versionParts(a)
 	bs := versionParts(b)
@@ -180,12 +187,14 @@ func comparePanelVersion(a, b string) int {
 	return 0
 }
 
+// normalizeVer 去掉空白与前导 v，便于字符串比较回退。
 func normalizeVer(s string) string {
 	s = strings.TrimSpace(strings.ToLower(s))
 	s = strings.TrimPrefix(s, "v")
 	return s
 }
 
+// versionParts 将版本拆成整数段；无法解析时返回 nil。
 func versionParts(s string) []int {
 	s = normalizeVer(s)
 	if s == "" {
@@ -207,6 +216,7 @@ func versionParts(s string) []int {
 	return out
 }
 
+// firstNonEmpty 返回第一个非空白字符串。
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -216,6 +226,7 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// truncateStr 截断过长字符串，用于错误日志。
 func truncateStr(s string, n int) string {
 	if len(s) <= n {
 		return s

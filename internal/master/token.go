@@ -13,12 +13,14 @@ import (
 	"1panel-agent/internal/config"
 )
 
+// currentToken 并发安全读取当前安装/注册 Token。
 func (s *Server) currentToken() string {
 	s.tokenMu.RLock()
 	defer s.tokenMu.RUnlock()
 	return s.Token
 }
 
+// setToken 并发安全更新内存中的 Token（调用方负责落盘）。
 func (s *Server) setToken(tok string) {
 	s.tokenMu.Lock()
 	s.Token = tok
@@ -48,7 +50,7 @@ func (s *Server) VerifyToken(timestampStr, sign string) bool {
 	return subtle.ConstantTimeCompare([]byte(sign), []byte(expectedSign)) == 1
 }
 
-// RotateToken generates a new token, persists it, and drops current agent sessions.
+// RotateToken 生成新 Token、落盘，并断开现有 Agent 会话迫使其用新密钥重连。
 func (s *Server) RotateToken() (string, error) {
 	tok, err := config.GenerateToken()
 	if err != nil {
@@ -72,6 +74,7 @@ func (s *Server) RotateToken() (string, error) {
 	return tok, nil
 }
 
+// handleRotateToken 处理 POST /__mp/api/rotate-token，返回新 Token 与安装命令。
 func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

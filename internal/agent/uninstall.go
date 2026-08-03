@@ -9,6 +9,7 @@ import (
 	"1panel-agent/internal/config"
 )
 
+// agentServiceFile 是 Agent 的 systemd unit 路径。
 const agentServiceFile = "/etc/systemd/system/1pm-agent.service"
 
 // Uninstall 停止 agent 服务，清除配置文件并彻底删除二进制文件本身。

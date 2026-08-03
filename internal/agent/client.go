@@ -1,3 +1,4 @@
+// Package agent 实现 1pm Agent：注册到 Master、维持隧道并代理本机 1Panel。
 package agent
 
 import (
@@ -49,6 +50,7 @@ func Run(cfg *config.Agent) error {
 	}
 }
 
+// connectOnce 完成一次鉴权连接、注册与 smux Accept 循环；断开则返回错误。
 func (c *Client) connectOnce() error {
 	if c.Cfg.Master == "" || c.Cfg.Token == "" {
 		return fmt.Errorf("master/token not configured; run agent register first")
@@ -121,6 +123,7 @@ func (c *Client) connectOnce() error {
 	}
 }
 
+// handleStream 读取流元数据并分发给 HTTP 或 WebSocket 处理。
 func (c *Client) handleStream(stream *smux.Stream) {
 	defer stream.Close()
 
@@ -139,6 +142,7 @@ func (c *Client) handleStream(stream *smux.Stream) {
 	}
 }
 
+// getSessionCookies 在配置了账号密码时尝试登录本机 1Panel 并返回会话 Cookie。
 func (c *Client) getSessionCookies() []*http.Cookie {
 	if c.Cfg.PanelUser == "" || c.Cfg.PanelPassword == "" {
 		return nil
@@ -151,6 +155,7 @@ func (c *Client) getSessionCookies() []*http.Cookie {
 	return res.Cookies
 }
 
+// handleHTTP 将隧道 HTTP 请求转发到本机 1Panel，并把响应写回流。
 func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, body io.Reader) {
 	panelURL, err := url.Parse(c.Cfg.PanelURL)
 	if err != nil {
@@ -220,6 +225,7 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	_ = protocol.CopyChunks(stream, resp.Body)
 }
 
+// handleWS 将隧道 WebSocket 升级请求转发到本机 1Panel 并双向拷贝帧。
 func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body io.Reader) {
 	// Drain empty/chunked upgrade body.
 	_, _ = io.Copy(io.Discard, body)
@@ -307,6 +313,7 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	<-errc
 }
 
+// writeErr 向隧道写一条错误响应元数据与纯文本 body。
 func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 	meta := &protocol.ResponseMeta{
 		Status: status,

@@ -1,3 +1,4 @@
+// Package master 实现 1pm Master：接管本机 1Panel 公网端口、管理 Agent 隧道与管理页。
 package master
 
 import (
@@ -21,19 +22,21 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// Server 是 Master HTTP 服务的运行时状态。
 type Server struct {
-	Listen        string
-	Token         string
-	PublicHost    string
-	Entrance      string
-	PanelUser     string
-	LocalPanel    string // http://127.0.0.1:internal
-	sessionSecret string // 内存随机生成的 Web Session Secret（绝不上盘）
+	Listen        string // 对外监听地址，通常为 :原1Panel端口
+	Token         string // Agent 安装/注册 HMAC 密钥
+	PublicHost    string // 可选 NAT 对外 host[:port]；空则用请求 Host
+	Entrance      string // 1Panel 安全入口路径段
+	PanelUser     string // 本机 1Panel 用户名（展示用）
+	LocalPanel    string // 内部避让地址，形如 http://127.0.0.1:<internal>
+	sessionSecret string // 内存 Web Session Secret（绝不上盘）
 	reg           *Registry
 	localProxy    *httputil.ReverseProxy
 	tokenMu       sync.RWMutex
 }
 
+// New 加载 Master 状态、接管 1Panel 端口并构造 Server。
 func New() (*Server, error) {
 	state, err := config.LoadMasterOrEmpty()
 	if err != nil {
@@ -80,6 +83,7 @@ func New() (*Server, error) {
 	return s, nil
 }
 
+// Run 注册路由并阻塞监听；返回 ListenAndServe 的错误。
 func (s *Server) Run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
@@ -97,6 +101,7 @@ func (s *Server) Run() error {
 	return srv.ListenAndServe()
 }
 
+// handleRoot 处理根路径：有 mp_node 则走 Agent 隧道，否则反代本机 1Panel。
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/__mp" {
 		http.Redirect(w, r, "/__mp/", http.StatusFound)
@@ -121,6 +126,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// handleAgentWS 校验签名后接受 Agent WebSocket，完成注册并挂入 smux Registry。
 func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	ts := r.URL.Query().Get("timestamp")
 	sign := r.URL.Query().Get("sign")
@@ -181,6 +187,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("agent offline: %s (%s)", info.Hostname, info.ID)
 }
 
+// proxyHTTP 经 smux 流代理 HTTP，必要时解压并注入侧边栏 Hook。
 func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
@@ -256,6 +263,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	_, _ = w.Write(respBody)
 }
 
+// proxyWebSocket 经 smux 流完成浏览器与远端 1Panel 的 WebSocket 双向转发。
 func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
@@ -349,7 +357,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 	<-errc
 }
 
-// listenPort returns the port Master is bound to.
+// listenPort 从 Listen 地址解析对外端口；失败时回退 "80"。
 func (s *Server) listenPort() string {
 	_, port, _ := net.SplitHostPort(s.Listen)
 	if port != "" {
@@ -361,8 +369,8 @@ func (s *Server) listenPort() string {
 	return "80"
 }
 
-// AdvertiseHost returns host:port for the agent install command.
-// Prefer the Host the browser actually used; PublicHost is an optional override (NAT).
+// AdvertiseHost 返回安装命令用的 host:port。
+// 优先 PublicHost（NAT），否则用浏览器 Host，再否则探测局域网 IP。
 func (s *Server) AdvertiseHost(r *http.Request) string {
 	if s.PublicHost != "" {
 		if strings.Contains(s.PublicHost, ":") {

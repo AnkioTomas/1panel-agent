@@ -18,6 +18,7 @@ func GenerateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// masterFileName 是 Master 状态文件名。
 const masterFileName = "master.json"
 
 // Master 定义了 Master 节点的配置结构。

@@ -13,6 +13,7 @@ import (
 	"1panel-agent/internal/config"
 )
 
+// authCookie 是 Master 管理页会话 Cookie 名。
 const (
 	authCookie = "mp_auth"
 )

@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-// EncryptPassword matches 1Panel frontend encryptPassword (RSA+AES hybrid).
+// EncryptPassword 复刻 1Panel 前端 encryptPassword（RSA+AES 混合加密）。
 func EncryptPassword(plain string, publicKeyPEM string) (string, error) {
 	pub, err := parsePublicKey(publicKeyPEM)
 	if err != nil {
@@ -48,6 +48,7 @@ func EncryptPassword(plain string, publicKeyPEM string) (string, error) {
 		base64.StdEncoding.EncodeToString(ct), nil
 }
 
+// parsePublicKey 解析 PEM 或 base64(PEM) 形式的 RSA 公钥。
 func parsePublicKey(pemText string) (*rsa.PublicKey, error) {
 	pemText = strings.ReplaceAll(pemText, `"`, "")
 	block, _ := pem.Decode([]byte(pemText))
@@ -72,6 +73,7 @@ func parsePublicKey(pemText string) (*rsa.PublicKey, error) {
 	return pub, nil
 }
 
+// pkcs7Pad 对 data 做 PKCS#7 填充到 blockSize 对齐。
 func pkcs7Pad(data []byte, blockSize int) []byte {
 	n := blockSize - len(data)%blockSize
 	out := make([]byte, len(data)+n)

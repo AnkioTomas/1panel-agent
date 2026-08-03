@@ -9,6 +9,7 @@ import (
 	"text/template"
 )
 
+// handleAgentScript 在签名校验通过后下发 Agent 安装脚本（/agent.sh）。
 func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -43,6 +44,7 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	_ = agentInstallTmpl.Execute(w, data)
 }
 
+// handleAgentBinary 在签名校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
 func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -78,12 +80,13 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "1pm", st.ModTime(), f)
 }
 
-// InstallCommand returns the one-liner shown in Master UI.
+// InstallCommand 返回管理页展示的一键安装命令。
 func (s *Server) InstallCommand(r *http.Request) string {
 	host := s.AdvertiseHost(r)
 	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?token=%s" | sudo bash`, host, s.currentToken())
 }
 
+// agentInstallTmpl 是 /agent.sh 安装脚本模板。
 var agentInstallTmpl = template.Must(template.New("agent.sh").Parse(strings.TrimSpace(`
 #!/bin/bash
 # 1pm agent bootstrap — idempotent reinstall from Master

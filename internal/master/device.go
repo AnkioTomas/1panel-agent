@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// DetectLANIP picks a non-loopback IPv4 suitable for Agent advertise.
+// DetectLANIP 选取非回环 IPv4，优先私网地址，供 Agent 安装宣告使用。
 func DetectLANIP() string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -47,7 +47,7 @@ func DetectLANIP() string {
 	return fallback
 }
 
-// DeviceIP returns the preferred advertise IP for UI display.
+// DeviceIP 返回 UI/注入脚本展示用的首选 IP（PublicHost 主机名优先）。
 func (s *Server) DeviceIP() string {
 	if s.PublicHost != "" {
 		host := s.PublicHost

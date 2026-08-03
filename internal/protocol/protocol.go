@@ -1,3 +1,4 @@
+// Package protocol 定义 Master/Agent 隧道上的注册消息、流元数据与分块传输格式。
 package protocol
 
 import (
@@ -11,14 +12,17 @@ import (
 	"github.com/xtaci/smux"
 )
 
+// 隧道流类型与帧大小上限。
 const (
+	// StreamTypeHTTP 表示普通 HTTP 隧道流。
 	StreamTypeHTTP byte = 1
-	StreamTypeWS   byte = 2
-	maxJSONFrame        = 16 << 20
-	maxChunk            = 8 << 20
+	// StreamTypeWS 表示 WebSocket 隧道流。
+	StreamTypeWS byte = 2
+	maxJSONFrame      = 16 << 20
+	maxChunk          = 8 << 20
 )
 
-// Register is the first JSON message Agent sends after WebSocket upgrade.
+// Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。
 type Register struct {
 	ID           string `json:"id"`
 	Hostname     string `json:"hostname"`
@@ -26,13 +30,13 @@ type Register struct {
 	PanelVersion string `json:"panel_version,omitempty"`
 }
 
-// RegisterOK is Master's acknowledgment before smux takes over.
+// RegisterOK 是 Master 在 smux 接管前的注册应答。
 type RegisterOK struct {
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
 }
 
-// RequestMeta is written at the start of each smux stream from Master to Agent.
+// RequestMeta 写在每条 Master→Agent smux 流开头。
 type RequestMeta struct {
 	Type    byte                `json:"-"`
 	Method  string              `json:"method"`
@@ -40,12 +44,13 @@ type RequestMeta struct {
 	Headers map[string][]string `json:"headers"`
 }
 
-// ResponseMeta is written at the start of each HTTP response stream.
+// ResponseMeta 写在每条 HTTP 响应流开头。
 type ResponseMeta struct {
 	Status  int                 `json:"status"`
 	Headers map[string][]string `json:"headers"`
 }
 
+// WriteJSON 以 4 字节大端长度前缀写入 JSON 帧。
 func WriteJSON(w io.Writer, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -60,6 +65,7 @@ func WriteJSON(w io.Writer, v any) error {
 	return err
 }
 
+// ReadJSON 读取一条长度前缀 JSON 帧并反序列化到 v。
 func ReadJSON(r io.Reader, v any) error {
 	var lenBuf [4]byte
 	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
@@ -76,6 +82,7 @@ func ReadJSON(r io.Reader, v any) error {
 	return json.Unmarshal(buf, v)
 }
 
+// WriteRequestMeta 写入流类型字节 + RequestMeta JSON。
 func WriteRequestMeta(w io.Writer, meta *RequestMeta) error {
 	if meta.Type == 0 {
 		meta.Type = StreamTypeHTTP
@@ -86,6 +93,7 @@ func WriteRequestMeta(w io.Writer, meta *RequestMeta) error {
 	return WriteJSON(w, meta)
 }
 
+// ReadRequestMeta 读取流类型字节与 RequestMeta。
 func ReadRequestMeta(r io.Reader) (*RequestMeta, error) {
 	var typ [1]byte
 	if _, err := io.ReadFull(r, typ[:]); err != nil {
@@ -99,7 +107,7 @@ func ReadRequestMeta(r io.Reader) (*RequestMeta, error) {
 	return meta, nil
 }
 
-// CopyChunks writes r to w as length-prefixed chunks, ending with a zero chunk.
+// CopyChunks 将 r 写成长度前缀分块，并以零长度块结束。
 func CopyChunks(w io.Writer, r io.Reader) error {
 	buf := make([]byte, 32*1024)
 	var lenBuf [4]byte
@@ -125,7 +133,7 @@ func CopyChunks(w io.Writer, r io.Reader) error {
 	}
 }
 
-// ChunkReader reads length-prefixed chunks until a zero chunk.
+// ChunkReader 读取长度前缀分块，直到遇到零长度结束块。
 type ChunkReader struct {
 	r       io.Reader
 	pending []byte
@@ -133,10 +141,12 @@ type ChunkReader struct {
 	err     error
 }
 
+// NewChunkReader 包装底层 Reader 为分块读取器。
 func NewChunkReader(r io.Reader) *ChunkReader {
 	return &ChunkReader{r: r}
 }
 
+// Read 实现 io.Reader，按需拉取下一个分块。
 func (c *ChunkReader) Read(p []byte) (int, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -170,6 +180,7 @@ func (c *ChunkReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// HeaderFromHTTP 深拷贝 http.Header 为可 JSON 序列化的 map。
 func HeaderFromHTTP(h http.Header) map[string][]string {
 	out := make(map[string][]string, len(h))
 	for k, v := range h {
@@ -180,6 +191,7 @@ func HeaderFromHTTP(h http.Header) map[string][]string {
 	return out
 }
 
+// ApplyHeader 用 src 覆盖写入 dst（先 Del 再 Add）。
 func ApplyHeader(dst http.Header, src map[string][]string) {
 	for k, vals := range src {
 		dst.Del(k)
@@ -189,8 +201,7 @@ func ApplyHeader(dst http.Header, src map[string][]string) {
 	}
 }
 
-// SmuxConfig returns the shared smux configuration used by both Master and Agent.
-// Keeping it here ensures KeepAlive parameters stay in sync across both ends.
+// SmuxConfig 返回 Master/Agent 共用的 smux 配置，保证 KeepAlive 参数一致。
 func SmuxConfig() *smux.Config {
 	cfg := smux.DefaultConfig()
 	cfg.KeepAliveInterval = 20 * time.Second

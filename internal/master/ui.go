@@ -9,6 +9,7 @@ import (
 	"1panel-agent/internal/panel"
 )
 
+// handleMP 处理 /__mp/：鉴权后分发 API、节点切换与管理页。
 func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
 
@@ -53,6 +54,7 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// apiAgents 返回在线 Agent JSON 列表（含 OpenURL）。
 func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 	type item struct {
 		ID           string `json:"id"`
@@ -78,6 +80,7 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// pageData 是管理页模板数据。
 type pageData struct {
 	Agents        []AgentInfo
 	Register      string
@@ -89,6 +92,7 @@ type pageData struct {
 	Online        int
 }
 
+// renderNodes 渲染 /__mp/ 节点管理页。
 func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	host := s.AdvertiseHost(r)
 	agents := s.reg.List()
@@ -106,6 +110,7 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	_ = nodesTmpl.Execute(w, data)
 }
 
+// nodesTmpl 是 /__mp/ 管理页 HTML 模板。
 var nodesTmpl = template.Must(template.New("nodes").Parse(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>

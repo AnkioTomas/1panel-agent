@@ -1,3 +1,4 @@
+// Package config 负责 Agent/Master 配置的路径、读写与 Token 生成。
 package config
 
 import (
@@ -9,7 +10,9 @@ import (
 	"path/filepath"
 )
 
+// Agent 配置路径与默认值。
 const (
+	// DefaultPanelURL 是未探测到本机面板时的默认地址。
 	DefaultPanelURL = "http://127.0.0.1:20560"
 	dirName         = ".1panel-agent"
 	fileName        = "agent.json"

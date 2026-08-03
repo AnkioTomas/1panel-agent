@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// sidebarHook 生成注入 1Panel HTML 的侧边栏切换脚本（含 Master IP 展示）。
 func sidebarHook(masterIP string) string {
 	if masterIP == "" {
 		masterIP = "-"
@@ -260,6 +261,7 @@ try{
 	return strings.ReplaceAll(tpl, "__MASTER_IP__", string(ipJSON))
 }
 
+// injectHookHTML 向 HTML 响应注入侧边栏 Hook；已注入则原样返回。
 func (s *Server) injectHookHTML(body []byte, masterIP string) []byte {
 	if bytes.Contains(body, []byte(`data-mp-hook="1"`)) {
 		return body
@@ -274,6 +276,7 @@ func (s *Server) injectHookHTML(body []byte, masterIP string) []byte {
 	return append(body, hook...)
 }
 
+// dropHopHeaders 删除重写 body 后失效的长度/编码类响应头。
 func dropHopHeaders(h map[string][]string) {
 	for _, k := range []string{"Content-Length", "Transfer-Encoding", "Content-Encoding"} {
 		delete(h, k)
@@ -285,7 +288,7 @@ func dropHopHeaders(h map[string][]string) {
 	}
 }
 
-// maybeGunzip returns raw body when Content-Encoding is gzip; otherwise body unchanged.
+// maybeGunzip 在 Content-Encoding 为 gzip 时解压 body，否则原样返回。
 func maybeGunzip(body []byte, headers map[string][]string) []byte {
 	ce := ""
 	for k, vals := range headers {
@@ -309,6 +312,7 @@ func maybeGunzip(body []byte, headers map[string][]string) []byte {
 	return out
 }
 
+// wrapLocalProxy 配置本机反代：禁用压缩并在 HTML 响应中注入 Hook。
 func (s *Server) wrapLocalProxy() {
 	if s.localProxy == nil {
 		return

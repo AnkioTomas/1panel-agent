@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// InjectAuth adds 1Panel API auth headers when key is set and headers are absent.
+// InjectAuth 在 apiKey 非空且头未设置时注入 1Panel-Token / 1Panel-Timestamp。
 func InjectAuth(h http.Header, apiKey string) {
 	if apiKey == "" {
 		return
@@ -21,6 +21,7 @@ func InjectAuth(h http.Header, apiKey string) {
 	h.Set("1Panel-Timestamp", strconv.FormatInt(ts, 10))
 }
 
+// Token 按 1Panel 规则计算 md5("1panel"+apiKey+timestamp)。
 func Token(apiKey string, unixTs int64) string {
 	sum := md5.Sum([]byte("1panel" + apiKey + strconv.FormatInt(unixTs, 10)))
 	return hex.EncodeToString(sum[:])

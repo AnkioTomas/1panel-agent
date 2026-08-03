@@ -13,10 +13,12 @@ import (
 	"time"
 )
 
+// LoginResult 包含登录成功后的会话 Cookie。
 type LoginResult struct {
 	Cookies []*http.Cookie
 }
 
+// loginBody 对应 1Panel v2 登录 API 请求体。
 type loginBody struct {
 	Name          string `json:"name"`
 	Password      string `json:"password"`
@@ -27,18 +29,19 @@ type loginBody struct {
 	Language      string `json:"language"`
 }
 
+// apiResp 是 1Panel JSON API 的通用响应外壳。
 type apiResp struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
 }
 
-// Login performs 1Panel session login against panelBase (e.g. http://127.0.0.1:52045).
+// Login 使用默认 HTTP 客户端登录 panelBase（如 http://127.0.0.1:52045）。
 func Login(panelBase, entrance, username, password string) (*LoginResult, error) {
 	return LoginWithClient(http.DefaultClient, panelBase, entrance, username, password, "")
 }
 
-// LoginWithClient allows a custom HTTP client (e.g. tunnel transport) and optional public key PEM.
+// LoginWithClient 允许自定义 HTTP 客户端与可选公钥 PEM（隧道场景）。
 func LoginWithClient(client *http.Client, panelBase, entrance, username, password, publicKeyPEM string) (*LoginResult, error) {
 	base := strings.TrimRight(panelBase, "/")
 	jar, err := cookiejar.New(nil)
@@ -121,6 +124,7 @@ func LoginWithClient(client *http.Client, panelBase, entrance, username, passwor
 	return &LoginResult{Cookies: jar.Cookies(u)}, nil
 }
 
+// publicKeyFromJar 从 CookieJar 中取出 panel_public_key（PEM 文本）。
 func publicKeyFromJar(jar http.CookieJar, base string) string {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -142,7 +146,7 @@ func publicKeyFromJar(jar http.CookieJar, base string) string {
 	return ""
 }
 
-// primePublicKey fetches /auth/captcha which sets panel_public_key without counting as a failed login.
+// primePublicKey 请求 /auth/captcha 以获取 panel_public_key，不计入登录失败。
 func primePublicKey(c *http.Client, base, entranceCode string) error {
 	req, err := http.NewRequest(http.MethodGet, base+"/api/v2/core/auth/captcha", nil)
 	if err != nil {
@@ -160,6 +164,7 @@ func primePublicKey(c *http.Client, base, entranceCode string) error {
 	return nil
 }
 
+// truncate 截断过长字符串，用于错误信息。
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -48,6 +48,7 @@ func EnsureTakeover(state *config.Master) (publicPort, internalPort int, entranc
 	return publicPort, internalPort, entrance, panelUser, nil
 }
 
+// restartPanel 重启 1Panel 相关 systemd 单元（失败只打日志）。
 func restartPanel() error {
 	for _, unit := range []string{"1panel-core", "1panel-agent"} {
 		cmd := exec.Command("systemctl", "restart", unit)
@@ -60,6 +61,7 @@ func restartPanel() error {
 	return nil
 }
 
+// waitPort 在 timeout 内轮询 TCP 端口就绪。
 func waitPort(addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var last error

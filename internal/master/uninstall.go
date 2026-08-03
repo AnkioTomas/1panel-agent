@@ -11,10 +11,10 @@ import (
 	"1panel-agent/internal/panel"
 )
 
+// masterServiceFile 是 Master 的 systemd unit 路径。
 const masterServiceFile = "/etc/systemd/system/1pm-master.service"
 
-// Uninstall stops the master service, restores the original 1Panel port,
-// removes state files, and removes the binary itself.
+// Uninstall 停止 Master 服务、恢复原 1Panel 端口、清理状态文件并删除自身二进制。
 func Uninstall() error {
 	quietExec("systemctl", "stop", "1pm-master.service")
 	quietExec("systemctl", "disable", "1pm-master.service")
@@ -51,6 +51,7 @@ func Uninstall() error {
 	return nil
 }
 
+// quietExec 执行外部命令并忽略退出码（卸载路径专用）。
 func quietExec(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
@@ -58,6 +59,7 @@ func quietExec(name string, args ...string) {
 	_ = cmd.Run()
 }
 
+// removeSelfBin 删除当前进程对应的二进制文件。
 func removeSelfBin() {
 	exe, err := os.Executable()
 	if err != nil {

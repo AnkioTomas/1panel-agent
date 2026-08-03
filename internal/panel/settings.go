@@ -1,3 +1,4 @@
+// Package panel 封装与本机 1Panel 的 CLI/HTTP 交互（设置、登录、鉴权头、加密）。
 package panel
 
 import (
@@ -18,6 +19,7 @@ type Settings struct {
 	SystemVersion    string
 }
 
+// CLI 输出解析用正则。
 var (
 	versionLineRe = regexp.MustCompile(`(?m)(?:版本|Version)\s*:\s*(v?[0-9][^\s]*)`)
 	userLineRe    = regexp.MustCompile(`(?m)(?:用户|User)\s*:\s*(\S+)`)
@@ -129,6 +131,7 @@ func InternalPort(publicPort int) int {
 	return p
 }
 
+// ansiRe 匹配终端 ANSI 颜色转义序列。
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // stripANSI 过滤字符串中的 ANSI 转义颜色字符。
