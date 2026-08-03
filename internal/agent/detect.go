@@ -20,8 +20,8 @@ func AutofillPanel(cfg *config.Agent) {
 	log.Printf("detected local 1Panel %s", cfg.PanelURL)
 }
 
-// SetPanel 更新并保存 Agent 的面板 URL 及 Key 配置。
-func SetPanel(panelURL, panelKey string) error {
+// SetPanel 更新并保存 Agent 的面板配置（URL、Key、User、Password）。
+func SetPanel(panelURL, panelKey, panelUser, panelPassword string) error {
 	cfg, err := config.LoadOrEmpty()
 	if err != nil {
 		return err
@@ -32,6 +32,12 @@ func SetPanel(panelURL, panelKey string) error {
 	}
 	if panelKey != "" {
 		cfg.PanelKey = panelKey
+	}
+	if panelUser != "" {
+		cfg.PanelUser = panelUser
+	}
+	if panelPassword != "" {
+		cfg.PanelPassword = panelPassword
 	}
 	if cfg.PanelURL == "" {
 		return fmt.Errorf("panel-url required")

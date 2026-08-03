@@ -130,6 +130,18 @@ func (c *Client) handleStream(stream *smux.Stream) {
 	}
 }
 
+func (c *Client) getSessionCookies() []*http.Cookie {
+	if c.Cfg.PanelUser == "" || c.Cfg.PanelPassword == "" {
+		return nil
+	}
+	res, err := panel.Login(c.Cfg.PanelURL, "", c.Cfg.PanelUser, c.Cfg.PanelPassword)
+	if err != nil {
+		log.Printf("agent auto-login failed: %v", err)
+		return nil
+	}
+	return res.Cookies
+}
+
 func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, body io.Reader) {
 	panelURL, err := url.Parse(c.Cfg.PanelURL)
 	if err != nil {
@@ -162,6 +174,13 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	req.Header.Del("Accept-Encoding")
 	req.Host = panelURL.Host
 	panel.InjectAuth(req.Header, c.Cfg.PanelKey)
+
+	// If no psession cookie present in request, inject auto-login session cookies.
+	if req.Header.Get("Cookie") == "" || !strings.Contains(req.Header.Get("Cookie"), "psession=") {
+		for _, cookie := range c.getSessionCookies() {
+			req.AddCookie(cookie)
+		}
+	}
 
 	client := &http.Client{
 		Timeout: 0,

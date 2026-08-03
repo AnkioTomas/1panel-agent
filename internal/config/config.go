@@ -17,11 +17,13 @@ const (
 
 // Agent 定义了 Agent 节点的配置结构。
 type Agent struct {
-	ID       string `json:"id"`
-	Master   string `json:"master"` // host:port
-	Token    string `json:"token"`
-	PanelURL string `json:"panel_url"`
-	PanelKey string `json:"panel_key,omitempty"`
+	ID            string `json:"id"`
+	Master        string `json:"master"` // host:port
+	Token         string `json:"token"`
+	PanelURL      string `json:"panel_url"`
+	PanelKey      string `json:"panel_key,omitempty"`
+	PanelUser     string `json:"panel_user,omitempty"`
+	PanelPassword string `json:"panel_password,omitempty"`
 }
 
 // Dir 返回 Agent 配置目录路径（~/.1panel-agent）。
