@@ -3,7 +3,6 @@ package master_test
 import (
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,24 +28,15 @@ func TestTunnelProxy(t *testing.T) {
 	}))
 	defer panel.Close()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	srv, err := master.New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	masterAddr := ln.Addr().String()
-	_ = ln.Close()
-
-	token := "test-token"
-	srv, err := master.New(master.Options{
-		Listen:     masterAddr,
-		Token:      token,
-		Takeover:   false,
-		LocalPanel: "",
-		PublicHost: "127.0.0.1",
-	})
-	if err != nil {
-		t.Fatal(err)
+	masterAddr := srv.Listen
+	if strings.HasPrefix(masterAddr, ":") {
+		masterAddr = "127.0.0.1" + masterAddr
 	}
+	token := srv.Token
 	go func() {
 		if err := srv.Run(); err != nil && err != http.ErrServerClosed {
 			t.Logf("master exit: %v", err)

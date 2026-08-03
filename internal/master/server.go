@@ -34,55 +34,22 @@ type Server struct {
 	tokenMu    sync.RWMutex
 }
 
-type Options struct {
-	Listen     string
-	Token      string
-	PublicHost string
-	Entrance   string
-	PanelUser  string
-	PanelPass  string
-	LocalPanel string
-	Takeover   bool
-}
-
-func New(opts Options) (*Server, error) {
+func New() (*Server, error) {
 	state, err := config.LoadMasterOrEmpty()
 	if err != nil {
 		return nil, err
 	}
 	dirty := false
-	if opts.Token != "" {
-		state.Token = opts.Token
-		dirty = true
-	}
-	if opts.PanelPass != "" {
-		state.PanelPassword = opts.PanelPass
-		dirty = true
-	}
-	if opts.PublicHost != "" {
-		state.PublicHost = opts.PublicHost
-		dirty = true
-	}
-	if opts.Entrance != "" {
-		state.Entrance = opts.Entrance
-		dirty = true
-	}
-	if opts.PanelUser != "" {
-		state.PanelUser = opts.PanelUser
-		dirty = true
-	}
 
-	listen := opts.Listen
-	localPanel := opts.LocalPanel
 	entrance := state.Entrance
 
 	// Sync username/entrance from 1panel CLI (never open core.db).
 	if st, err := panel.ReadSettings(); err == nil {
-		if opts.PanelUser == "" && st.UserName != "" && state.PanelUser != st.UserName {
+		if st.UserName != "" && state.PanelUser != st.UserName {
 			state.PanelUser = st.UserName
 			dirty = true
 		}
-		if opts.Entrance == "" && st.SecurityEntrance != "" {
+		if st.SecurityEntrance != "" {
 			entrance = st.SecurityEntrance
 			if state.Entrance != entrance {
 				state.Entrance = entrance
@@ -91,19 +58,16 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 
-	if opts.Takeover {
-		pub, internal, ent, err := EnsureTakeover(state)
-		if err != nil {
-			return nil, err
-		}
+	pub, internal, ent, err := EnsureTakeover(state)
+	listen := ":8080"
+	localPanel := ""
+	if err == nil {
 		entrance = ent
-		if listen == "" {
-			listen = fmt.Sprintf(":%d", pub)
-		}
-		if localPanel == "" {
-			localPanel = panel.LocalPanelURL(internal)
-		}
+		listen = fmt.Sprintf(":%d", pub)
+		localPanel = panel.LocalPanelURL(internal)
 		dirty = true
+	} else if state.InternalPort > 0 {
+		localPanel = panel.LocalPanelURL(state.InternalPort)
 	}
 
 	if state.Token == "" {
@@ -120,12 +84,6 @@ func New(opts Options) (*Server, error) {
 	}
 	if state.PanelPassword == "" {
 		log.Printf("warn: panel password not set — run: 1pm master set --panel-pass PASS (needed for node switch login)")
-	}
-	if listen == "" {
-		listen = ":8080"
-	}
-	if localPanel == "" && state.InternalPort > 0 {
-		localPanel = panel.LocalPanelURL(state.InternalPort)
 	}
 
 	s := &Server{

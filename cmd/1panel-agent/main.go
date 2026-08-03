@@ -27,8 +27,7 @@ func main() {
 				}
 				return
 			case "uninstall":
-				removeBin := hasFlag(os.Args[3:], "--remove-bin")
-				if err := master.Uninstall(removeBin); err != nil {
+				if err := master.Uninstall(); err != nil {
 					fatal(err)
 				}
 				return
@@ -53,61 +52,10 @@ func main() {
 }
 
 func runMaster(args []string) error {
-	opts := master.Options{
-		Takeover: true,
+	if len(args) > 0 {
+		return fmt.Errorf("master does not take arguments; use '1pm master set' to configure options")
 	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--listen":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--listen needs a value")
-			}
-			opts.Listen = args[i]
-		case "--token":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--token needs a value")
-			}
-			opts.Token = args[i]
-		case "--host":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--host needs a value")
-			}
-			opts.PublicHost = args[i]
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			opts.PanelUser = args[i]
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			opts.PanelPass = args[i]
-		case "--entrance":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--entrance needs a value")
-			}
-			opts.Entrance = args[i]
-		case "--no-takeover":
-			opts.Takeover = false
-		case "--upstream":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--upstream needs a value")
-			}
-			opts.LocalPanel = args[i]
-		default:
-			return fmt.Errorf("unknown master flag: %s", args[i])
-		}
-	}
-
-	srv, err := master.New(opts)
+	srv, err := master.New()
 	if err != nil {
 		return err
 	}
@@ -192,8 +140,7 @@ func runAgent(args []string) error {
 		agent.AutofillPanel(cfg)
 		return agent.Run(cfg)
 	case "uninstall":
-		removeBin := hasFlag(args[1:], "--remove-bin")
-		return agent.Uninstall(removeBin)
+		return agent.Uninstall()
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
 	}
@@ -236,11 +183,11 @@ func usage() {
 Usage:
   1pm master                          start master (systemd: ExecStart=/usr/local/bin/1pm master)
   1pm master set --panel-pass PASS    configure panel password for node-switch
-  1pm master uninstall [--remove-bin] stop service, restore 1Panel port, remove state
+  1pm master uninstall                stop service, restore 1Panel port, remove state & binary
 
   1pm agent register host:port/token  register and start agent
   1pm agent run                       start agent with saved config
-  1pm agent uninstall [--remove-bin]  stop service, remove config
+  1pm agent uninstall                 stop service, remove config & binary
 
   1pm version
 
