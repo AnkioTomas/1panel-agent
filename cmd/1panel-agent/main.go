@@ -46,7 +46,6 @@ func main() {
 func runMaster(args []string) error {
 	opts := master.Options{
 		Takeover: true,
-		DBPath:   "",
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {

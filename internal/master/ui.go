@@ -103,7 +103,7 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 		DeviceIP:      s.DeviceIP(),
 		Entrance:      s.Entrance,
 		LocalPanel:    s.LocalPanel,
-		MasterVersion: panel.ReadSystemVersion(""),
+		MasterVersion: panel.ReadSystemVersion(),
 		Online:        len(agents),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

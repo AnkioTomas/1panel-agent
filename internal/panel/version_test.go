@@ -2,14 +2,14 @@ package panel
 
 import "testing"
 
-func TestCompareVersions(t *testing.T) {
-	// compare lives in master; keep ReadSystemVersion smoke via regex only here
+func TestVersionLineRe(t *testing.T) {
 	cases := []struct {
 		in   string
 		want string
 	}{
 		{"版本: v2.2.4\n模式: stable\n", "v2.2.4"},
 		{"版本: 2.1.0\n", "2.1.0"},
+		{"Version: v2.2.4\nMode: stable\n", "v2.2.4"},
 	}
 	for _, tc := range cases {
 		m := versionLineRe.FindSubmatch([]byte(tc.in))

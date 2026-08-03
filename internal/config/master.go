@@ -25,7 +25,7 @@ type Master struct {
 	OriginalPort  int    `json:"original_port"`
 	InternalPort  int    `json:"internal_port"`
 	Entrance      string `json:"entrance"`
-	PanelUser     string `json:"panel_user,omitempty"`     // from core.db; used for node-switch login
+	PanelUser     string `json:"panel_user,omitempty"`     // from 1pctl user-info; used for node-switch login
 	PanelPassword string `json:"panel_password,omitempty"` // only for node-switch auto-login
 	PublicHost    string `json:"public_host,omitempty"`    // optional NAT override; default = request Host
 }

@@ -36,28 +36,13 @@ need_root() {
   [[ "$(id -u)" -eq 0 ]] || die "run as root (curl ... | sudo bash)"
 }
 
-# Master takeover requires a local 1Panel.
+# Master takeover requires a local 1Panel (detect via CLI, never poke core.db).
 require_1panel() {
-  local ok=0
-  if [[ -f /opt/1panel/db/core.db ]]; then
-    ok=1
-  elif have_cmd 1pctl; then
-    ok=1
-  elif systemctl list-unit-files 1panel-core.service 2>/dev/null | grep -q 1panel-core.service; then
-    ok=1
-  elif [[ -x /usr/bin/1panel ]] || [[ -x /usr/local/bin/1panel ]]; then
-    ok=1
-  fi
-  if [[ "$ok" -ne 1 ]]; then
-    echo "error: 未检测到本机 1Panel，无法安装 Master。" >&2
+  if ! have_cmd 1pctl && ! have_cmd 1panel; then
+    echo "error: 未检测到本机 1Panel（需要 1pctl / 1panel 命令），无法安装 Master。" >&2
     echo >&2
     echo "请先安装并启动 1Panel，再重新执行本脚本。" >&2
     echo "  官方安装: https://1panel.cn / https://github.com/1Panel-dev/1Panel" >&2
-    echo >&2
-    echo "检测项（任一存在即可）：" >&2
-    echo "  - /opt/1panel/db/core.db" >&2
-    echo "  - 命令 1pctl" >&2
-    echo "  - systemd 单元 1panel-core.service" >&2
     exit 1
   fi
   if systemctl list-unit-files 1panel-core.service 2>/dev/null | grep -q 1panel-core.service; then
@@ -67,10 +52,13 @@ require_1panel() {
       sleep 1
     fi
   fi
-  if [[ ! -f /opt/1panel/db/core.db ]]; then
-    die "已检测到 1Panel 组件，但缺少 /opt/1panel/db/core.db（面板未初始化？）"
+  if have_cmd 1pctl; then
+    1pctl user-info >/dev/null 2>&1 || die "1pctl user-info 失败：面板未初始化或权限不足"
+    log "1Panel OK: $(1pctl version 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+  else
+    1panel -l en user-info >/dev/null 2>&1 || die "1panel user-info 失败：面板未初始化或权限不足"
+    log "1Panel OK: 1panel CLI"
   fi
-  log "1Panel OK: /opt/1panel/db/core.db"
 }
 
 detect_arch() {

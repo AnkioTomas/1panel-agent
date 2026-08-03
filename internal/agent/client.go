@@ -27,9 +27,6 @@ type Client struct {
 }
 
 func Run(cfg *config.Agent) error {
-	if err := panel.RemoveStaleSidebarMenu(""); err != nil {
-		log.Printf("warn: clean sidebar menu on agent: %v", err)
-	}
 	c := &Client{Cfg: cfg}
 	backoff := time.Second
 	for {
@@ -83,7 +80,7 @@ func (c *Client) connectOnce() error {
 		ID:           c.Cfg.ID,
 		Hostname:     hostname,
 		PanelURL:     c.Cfg.PanelURL,
-		PanelVersion: panel.ReadSystemVersion(""),
+		PanelVersion: panel.ReadSystemVersion(),
 	}
 	if err := protocol.WriteJSON(netConn, reg); err != nil {
 		return fmt.Errorf("register write: %w", err)

@@ -41,7 +41,6 @@ type Options struct {
 	PanelPass  string
 	LocalPanel string
 	Takeover   bool
-	DBPath     string
 }
 
 func New(opts Options) (*Server, error) {
@@ -75,8 +74,8 @@ func New(opts Options) (*Server, error) {
 	localPanel := opts.LocalPanel
 	entrance := state.Entrance
 
-	// Sync username/entrance from core.db (source of truth).
-	if st, err := panel.ReadSettings(opts.DBPath); err == nil {
+	// Sync username/entrance from 1panel CLI (never open core.db).
+	if st, err := panel.ReadSettings(); err == nil {
 		if opts.PanelUser == "" && st.UserName != "" && state.PanelUser != st.UserName {
 			state.PanelUser = st.UserName
 			dirty = true
@@ -91,7 +90,7 @@ func New(opts Options) (*Server, error) {
 	}
 
 	if opts.Takeover {
-		pub, internal, ent, err := EnsureTakeover(opts.DBPath, state)
+		pub, internal, ent, err := EnsureTakeover(state)
 		if err != nil {
 			return nil, err
 		}
@@ -147,9 +146,6 @@ func New(opts Options) (*Server, error) {
 			http.Error(w, "local 1Panel unavailable: "+err.Error(), http.StatusBadGateway)
 		}
 		s.wrapLocalProxy()
-	}
-	if err := panel.RemoveStaleSidebarMenu(opts.DBPath); err != nil {
-		log.Printf("warn: clean sidebar menu: %v", err)
 	}
 	return s, nil
 }

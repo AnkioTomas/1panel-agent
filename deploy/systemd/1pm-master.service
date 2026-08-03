@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# State: /var/lib/1pm/master.json (tunnel token auto; user/entrance from core.db).
+# State: /var/lib/1pm/master.json (tunnel token auto; user/entrance from 1pctl).
 ExecStart=/usr/local/bin/1pm master
 Restart=on-failure
 RestartSec=3

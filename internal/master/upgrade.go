@@ -39,7 +39,7 @@ func (s *Server) handleUpgradeCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	masterVer := panel.ReadSystemVersion("")
+	masterVer := panel.ReadSystemVersion()
 	agents := s.reg.List()
 	out := upgradeCheckResult{
 		MasterVersion: masterVer,

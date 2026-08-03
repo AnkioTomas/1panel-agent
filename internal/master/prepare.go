@@ -13,8 +13,8 @@ import (
 )
 
 // EnsureTakeover makes local 1Panel listen on an internal port and returns public listen port.
-func EnsureTakeover(dbPath string, state *config.Master) (publicPort, internalPort int, entrance string, err error) {
-	st, err := panel.ReadSettings(dbPath)
+func EnsureTakeover(state *config.Master) (publicPort, internalPort int, entrance string, err error) {
+	st, err := panel.ReadSettings()
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("read 1panel settings: %w", err)
 	}
@@ -27,8 +27,8 @@ func EnsureTakeover(dbPath string, state *config.Master) (publicPort, internalPo
 		publicPort = state.OriginalPort
 		internalPort = state.InternalPort
 		if st.ServerPort != internalPort {
-			log.Printf("takeover: restore internal port %d (db has %d)", internalPort, st.ServerPort)
-			if err := panel.UpdateServerPort(dbPath, internalPort); err != nil {
+			log.Printf("takeover: restore internal port %d (panel has %d)", internalPort, st.ServerPort)
+			if err := panel.UpdateServerPort(internalPort); err != nil {
 				return 0, 0, "", err
 			}
 			_ = restartPanel()
@@ -38,7 +38,7 @@ func EnsureTakeover(dbPath string, state *config.Master) (publicPort, internalPo
 		internalPort = panel.InternalPort(publicPort)
 		if st.ServerPort != internalPort {
 			log.Printf("takeover: move 1Panel %d -> 127.0.0.1:%d", publicPort, internalPort)
-			if err := panel.UpdateServerPort(dbPath, internalPort); err != nil {
+			if err := panel.UpdateServerPort(internalPort); err != nil {
 				return 0, 0, "", err
 			}
 			if err := restartPanel(); err != nil {

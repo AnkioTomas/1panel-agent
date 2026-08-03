@@ -10,7 +10,7 @@ import (
 
 // AutofillPanel reads local 1Panel listen address into agent config when possible.
 func AutofillPanel(cfg *config.Agent) {
-	st, err := panel.ReadSettings(panel.DefaultCoreDB)
+	st, err := panel.ReadSettings()
 	if err != nil {
 		return
 	}

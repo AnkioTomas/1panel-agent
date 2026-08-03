@@ -60,15 +60,15 @@ curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/release
 | 本机面板地址 | takeover → `127.0.0.1:内部端口` |
 | 安装命令里的 host | 打开 `/__mp/` 时的 `Host` |
 | 隧道 token | 自动生成；UI 可轮换 |
-| 入口 / 端口 | `core.db` |
+| 入口 / 端口 / 用户 | `1pctl user-info`（不读 `core.db`） |
 | `/__mp/` 鉴权 | 浏览器现有本机 1Panel 登录态 → `mp_auth`；不存密码 |
-| 切换子节点 | 经隧道预登录远端，会话写入 `mp_r_*`（需 `1pm master set --panel-pass`） |
+| 切换子节点 | 经隧道预登录远端，会话写入 `mp_r_*`（需 `PANEL_PASS` / `1pm master set --panel-pass`） |
 
 systemd：`ExecStart=/usr/local/bin/1pm master`。
 
 管理页：`http://<master>:<原面板端口>/__mp/`（**需先登录本机 1Panel**；未登录会跳转安全入口）
 
-左侧菜单：Master 启动时写入 `HideMenu`「多机节点」，并注入脚本强制整页跳转（避开 Vue 路由）。
+左侧菜单：HTML/JS 注入「多机节点」入口（整页跳转，避开 Vue 路由）。
 
 状态文件：`/var/lib/1pm/master.json`
 
