@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// Settings 封装本地 1Panel 系统的基础配置信息。
 type Settings struct {
 	ServerPort       int
 	SecurityEntrance string
@@ -24,7 +25,7 @@ var (
 	panelURLRe = regexp.MustCompile(`https?://[^\s]+`)
 )
 
-// ReadSettings reads port/entrance/user via 1panel CLI. Never opens core.db.
+// ReadSettings 通过 1panel CLI 读取端口、安全入口与用户名等面板配置信息。
 func ReadSettings() (*Settings, error) {
 	out, err := runPanel("user-info")
 	if err != nil {
@@ -38,6 +39,7 @@ func ReadSettings() (*Settings, error) {
 	return st, nil
 }
 
+// parseUserInfo 解析 1panel user-info 输出内容中的端口、安全入口与用户名。
 func parseUserInfo(out []byte) (*Settings, error) {
 	text := stripANSI(string(out))
 	st := &Settings{}
@@ -64,14 +66,11 @@ func parseUserInfo(out []byte) (*Settings, error) {
 	return st, nil
 }
 
-// ReadSystemVersion returns local 1Panel version from 1pctl version.
+// ReadSystemVersion 通过 1panel version 读取本地 1Panel 版本号。
 func ReadSystemVersion() string {
-	out, err := exec.Command("1pctl", "version").CombinedOutput()
+	out, err := runPanel("version")
 	if err != nil {
-		out, err = runPanel("version")
-		if err != nil {
-			return ""
-		}
+		return ""
 	}
 	if m := versionLineRe.FindSubmatch(stripANSIBytes(out)); len(m) == 2 {
 		return string(m[1])
@@ -79,8 +78,7 @@ func ReadSystemVersion() string {
 	return ""
 }
 
-// UpdateServerPort changes panel listen port via official CLI (stdin to update port).
-// 1panel always exits 0; success/failure is in the text. Same-port "occupied" is OK.
+// UpdateServerPort 通过 1panel CLI 修改面板监听端口。
 func UpdateServerPort(port int) error {
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("invalid port %d", port)
@@ -105,24 +103,22 @@ func UpdateServerPort(port int) error {
 	return fmt.Errorf("update port: %s", msg)
 }
 
+// runPanel 统一调用 1panel 命令行工具并返回输出结果。
 func runPanel(args ...string) ([]byte, error) {
 	cmd := exec.Command("1panel", append([]string{"-l", "en"}, args...)...)
 	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return out, nil
+	if err != nil {
+		return out, fmt.Errorf("1panel %s: %w (%s)", strings.Join(args, " "), err, bytes.TrimSpace(out))
 	}
-	// 1pctl for environments where 1panel binary name differs
-	out2, err2 := exec.Command("1pctl", args...).CombinedOutput()
-	if err2 != nil {
-		return out, fmt.Errorf("%v (%s); 1pctl: %v (%s)", err, bytes.TrimSpace(out), err2, bytes.TrimSpace(out2))
-	}
-	return out2, nil
+	return out, nil
 }
 
+// LocalPanelURL 生成指定端口的本地 1Panel HTTP 地址。
 func LocalPanelURL(port int) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
+// InternalPort 根据公网端口推算避免冲突的内部端口。
 func InternalPort(publicPort int) int {
 	// Prefer moving up by 10000; if that overflows, move down by 10000.
 	// Either way the result must be a valid port and differ from publicPort.
@@ -135,10 +131,12 @@ func InternalPort(publicPort int) int {
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// stripANSI 过滤字符串中的 ANSI 转义颜色字符。
 func stripANSI(s string) string {
 	return ansiRe.ReplaceAllString(s, "")
 }
 
+// stripANSIBytes 过滤字节切片中的 ANSI 转义颜色字符。
 func stripANSIBytes(b []byte) []byte {
 	return []byte(stripANSI(string(b)))
 }
