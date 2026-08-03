@@ -12,17 +12,19 @@ import (
 
 func TestCookieHeaderForRemote(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "psession", Value: "local-sess"})
-	r.AddCookie(&http.Cookie{Name: "mp_r_psession", Value: "remote-sess"})
+	r.AddCookie(&http.Cookie{Name: "psession", Value: "remote-sess"})
+	r.AddCookie(&http.Cookie{Name: "mp_r_psession", Value: "legacy-remote"})
+	r.AddCookie(&http.Cookie{Name: "mp_l_psession", Value: "stashed-local"})
 	r.AddCookie(&http.Cookie{Name: "mp_node", Value: "abc"})
 	r.AddCookie(&http.Cookie{Name: "other", Value: "x"})
 
 	got := cookieHeaderForRemote(r)
+	// psession 优先（切换后真名已是远端）；mp_r_* 不应再覆盖；mp_l_* 不外泄
 	if !containsCookie(got, "psession=remote-sess") || !containsCookie(got, "other=x") {
 		t.Fatalf("missing mapped cookies: %q", got)
 	}
-	if containsCookie(got, "psession=local-sess") || containsCookie(got, "mp_node=abc") {
-		t.Fatalf("leaked local/control cookies: %q", got)
+	if containsCookie(got, "psession=legacy-remote") || containsCookie(got, "stashed-local") || containsCookie(got, "mp_node=abc") {
+		t.Fatalf("leaked stash/control cookies: %q", got)
 	}
 }
 
@@ -55,19 +57,19 @@ func trimSpace(s string) string {
 	return s
 }
 
-func TestRewriteSetCookieToRemoteNamespace(t *testing.T) {
+func TestRewriteSetCookieForRemoteKeepsRealNames(t *testing.T) {
 	h := map[string][]string{
 		"Set-Cookie": {
-			"psession=abc; Path=/; HttpOnly",
+			"psession=abc; Path=/api; HttpOnly",
 			"theme=dark; Path=/",
 		},
 	}
-	rewriteSetCookieToRemoteNamespace(h)
+	rewriteSetCookieForRemote(h)
 	vals := h["Set-Cookie"]
 	if len(vals) != 2 {
 		t.Fatalf("len %d", len(vals))
 	}
-	if vals[0] != "mp_r_psession=abc; Path=/; HttpOnly" {
+	if vals[0] != "psession=abc; Path=/; HttpOnly" {
 		t.Fatalf("sess %q", vals[0])
 	}
 	if vals[1] != "theme=dark; Path=/" {
@@ -75,11 +77,10 @@ func TestRewriteSetCookieToRemoteNamespace(t *testing.T) {
 	}
 }
 
-func TestAlignRemoteCSRFHeader(t *testing.T) {
+func TestAlignRemoteCSRFHeaderUsesRealName(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "local-csrf"})
-	r.AddCookie(&http.Cookie{Name: "mp_r_pcsrftoken", Value: "remote-csrf"})
-	r.Header.Set("X-CSRF-Token", "local-csrf")
+	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "remote-csrf"})
+	r.Header.Set("X-CSRF-Token", "stale")
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	applyRemoteRequestCookies(headers, r)
@@ -95,16 +96,34 @@ func TestAlignRemoteCSRFHeader(t *testing.T) {
 	}
 }
 
-func TestAlignRemoteCSRFHeaderStripsLocalWhenNoRemote(t *testing.T) {
+func TestAlignRemoteCSRFHeaderLegacyMPR(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "local-csrf"})
+	r.AddCookie(&http.Cookie{Name: "mp_r_pcsrftoken", Value: "legacy-csrf"})
+	r.Header.Set("X-CSRF-Token", "stale")
+
+	headers := protocol.HeaderFromHTTP(r.Header)
+	applyRemoteRequestCookies(headers, r)
+
+	got := ""
+	for k, vals := range headers {
+		if strings.EqualFold(k, "X-CSRF-Token") && len(vals) > 0 {
+			got = vals[0]
+		}
+	}
+	if got != "legacy-csrf" {
+		t.Fatalf("csrf header=%q want legacy-csrf", got)
+	}
+}
+
+func TestAlignRemoteCSRFHeaderStripsWhenMissing(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	r.Header.Set("X-CSRF-Token", "local-csrf")
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	applyRemoteRequestCookies(headers, r)
 	for k := range headers {
 		if strings.EqualFold(k, "X-CSRF-Token") {
-			t.Fatalf("local csrf header must be stripped, got %v", headers[k])
+			t.Fatalf("csrf header must be stripped, got %v", headers[k])
 		}
 	}
 }

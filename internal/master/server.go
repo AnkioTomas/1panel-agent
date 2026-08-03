@@ -251,7 +251,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
 		respBody = s.injectHookHTML(respBody, s.displayHost(r))
 	}
-	rewriteSetCookieToRemoteNamespace(respMeta.Headers)
+	rewriteSetCookieForRemote(respMeta.Headers)
 
 	h := w.Header()
 	for k, vals := range respMeta.Headers {
@@ -300,7 +300,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	rewriteSetCookieToRemoteNamespace(respMeta.Headers)
+	rewriteSetCookieForRemote(respMeta.Headers)
 	if respMeta.Status != http.StatusSwitchingProtocols {
 		h := w.Header()
 		for k, vals := range respMeta.Headers {
