@@ -75,23 +75,15 @@ WebSocket 请求走独立分支（StreamTypeWS=0x02），Agent 侧直接 TCP dia
 ```
 Browser ──GET /__mp/go/{id}──▶ Master
                                 │
-                                │  1. 通过隧道（tunnelTransport）发 HTTP 请求到 Agent 1Panel
-                                │  2. 访问安全入口（若有），获取 panel_public_key cookie
-                                │  3. 调用 /api/v2/core/auth/captcha 获取 RSA 公钥
-                                │  4. RSA 加密密码，POST /api/v2/core/auth/login
-                                │  5. 收集登录成功后的 Set-Cookie
+                                │  校验 agent 在线
+                                │  写入 Cookie：mp_node = agent-id
                                 │
-                                │  写入 Cookie：
-                                │    mp_node = agent-id
-                                │    mp_r_psession = <远端 psession 值>
-                                │    mp_r_pcsrftoken = <远端 csrf 值>
-                                │    mp_r_SecurityEntrance = <base64 安全入口>
-                                │
-Browser ◀── 302 重定向到 / ────┘
+Browser ◀── 302 重定向到入口 ───┘
 
 后续所有根路径请求：
   Master 读 mp_node cookie → 路由到对应 Agent 隧道
   Cookie 头中 mp_r_* 脱前缀后发给 Agent 1Panel（不污染本地 psession）
+  远端 Set-Cookie 加 mp_r_ 前缀写回浏览器
 ```
 
 ---

@@ -105,11 +105,8 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// Active remote node (cookie): root-path tunnel so 1Panel absolute /assets work.
 	if c, err := r.Cookie("mp_node"); err == nil && c.Value != "" {
 		if sess, ok := s.reg.Get(c.Value); ok {
-			targetPath := r.URL.Path
-			if r.URL.RawQuery != "" {
-				targetPath += "?" + r.URL.RawQuery
-			}
-			if isWebSocket(r) {
+			targetPath := r.URL.RequestURI()
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 				s.proxyWebSocket(w, r, sess, targetPath)
 				return
 			}
@@ -184,10 +181,6 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("agent offline: %s (%s)", info.Hostname, info.ID)
 }
 
-func isWebSocket(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-}
-
 func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
@@ -198,13 +191,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
-	// Force identity encoding so we can inject HTML into the tunnel response body.
+	// http.Header keys are canonical; force identity encoding for HTML injection.
 	delete(headers, "Accept-Encoding")
-	for k := range headers {
-		if strings.EqualFold(k, "Accept-Encoding") {
-			delete(headers, k)
-		}
-	}
 	// Keep local psession intact; use mp_r_* cookies for the agent panel.
 	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{

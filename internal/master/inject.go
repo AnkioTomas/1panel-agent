@@ -264,9 +264,6 @@ func (s *Server) injectHookHTML(body []byte, masterIP string) []byte {
 	if bytes.Contains(body, []byte(`data-mp-hook="1"`)) {
 		return body
 	}
-	if masterIP == "" {
-		masterIP = s.DeviceIP()
-	}
 	hook := []byte(sidebarHook(masterIP))
 	if i := bytes.LastIndex(bytes.ToLower(body), []byte("</body>")); i >= 0 {
 		out := append([]byte{}, body[:i]...)

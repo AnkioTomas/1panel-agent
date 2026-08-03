@@ -47,14 +47,13 @@ Agent ──WebSocket+Token──▶ Master /agent/ws
 │   │   ├── prepare.go      Takeover：迁移 1Panel 到内部端口、重启 1panel-core
 │   │   ├── registry.go     在线 Agent 注册表（内存，smux Session 持有）
 │   │   ├── install.go      /agent.sh 脚本生成 + /agent.bin 二进制分发
-│   │   ├── switch.go       /__mp/go/{id} 切换节点（隧道预登录 + Cookie 写入）
+│   │   ├── switch.go       /__mp/go/{id} 切换节点（写 mp_node Cookie + 重定向）
 │   │   ├── token.go        Token 管理（轮换）
 │   │   ├── inject.go       HTML 注入（1Panel 侧边栏节点切换按钮）
 │   │   ├── cookies.go      Cookie 命名空间隔离（mp_r_* 前缀）
 │   │   ├── ui.go           /__mp/ 管理页面（Go template HTML）
 │   │   ├── upgrade.go      检查 Master/Agent 版本更新
-│   │   ├── device.go       检测本机 LAN IP
-│   │   └── tunnel_http.go  tunnelTransport（用于节点切换预登录）
+│   │   └── device.go       检测本机 LAN IP
 │   ├── panel/              1Panel 交互层
 │   │   ├── settings.go     通过 1panel/1pctl CLI 读取端口/安全入口/用户名/版本
 │   │   ├── login.go        1Panel v2 登录（RSA+AES 混合加密密码）
