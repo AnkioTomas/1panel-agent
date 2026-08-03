@@ -248,12 +248,15 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	req.Host = panelURL.Host
 	c.applyEntrance(req.Header)
 
-	// 浏览器尚未带远端会话时，注入自动登录 Cookie。
+	// 浏览器尚未带远端会话时，注入自动登录 Cookie，并把会话回写给浏览器（经 Master 变成 mp_r_*）。
+	var injected []*http.Cookie
 	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
-		for _, cookie := range c.getSessionCookies() {
+		injected = c.getSessionCookies()
+		for _, cookie := range injected {
 			req.AddCookie(cookie)
 		}
 	}
+	alignRequestCSRF(req.Header)
 
 	client := &http.Client{
 		Timeout: 0,
@@ -278,6 +281,7 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		Status:  resp.StatusCode,
 		Headers: protocol.HeaderFromHTTP(resp.Header),
 	}
+	appendSessionSetCookies(respMeta.Headers, injected)
 	if err := protocol.WriteJSON(stream, respMeta); err != nil {
 		return
 	}
@@ -331,6 +335,13 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Set("Host", host)
 	c.applyEntrance(req.Header)
+
+	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
+		for _, cookie := range c.getSessionCookies() {
+			req.AddCookie(cookie)
+		}
+	}
+	alignRequestCSRF(req.Header)
 
 	if err := req.Write(conn); err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
@@ -386,13 +397,58 @@ func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 	_ = protocol.CopyChunks(stream, strings.NewReader(msg))
 }
 
-// cookieHeaderHasName 判断 Cookie 头是否含有指定名称（不会误匹配 mp_r_psession）。
-func cookieHeaderHasName(header, name string) bool {
+// alignRequestCSRF 使 X-CSRF-Token 与 Cookie 中的 pcsrftoken 一致（1Panel 双提交校验）。
+func alignRequestCSRF(h http.Header) {
+	csrf := cookieValueFromHeader(h.Get("Cookie"), "pcsrftoken")
+	if csrf == "" {
+		h.Del("X-CSRF-Token")
+		return
+	}
+	h.Set("X-CSRF-Token", csrf)
+}
+
+// appendSessionSetCookies 把自动登录得到的会话 Cookie 写回响应，供浏览器存为 mp_r_*。
+func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie) {
+	if len(cookies) == 0 {
+		return
+	}
+	for _, c := range cookies {
+		switch strings.ToLower(c.Name) {
+		case "psession", "pcsrftoken", "securityentrance", "panel_public_key":
+		default:
+			continue
+		}
+		sc := &http.Cookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Path:     "/",
+			HttpOnly: c.HttpOnly,
+			SameSite: c.SameSite,
+			Secure:   c.Secure,
+		}
+		if c.MaxAge > 0 {
+			sc.MaxAge = c.MaxAge
+		}
+		headers["Set-Cookie"] = append(headers["Set-Cookie"], sc.String())
+	}
+}
+
+// cookieValueFromHeader 从 Cookie 头解析指定名称的值。
+func cookieValueFromHeader(header, name string) string {
 	prefix := name + "="
-	for _, part := range strings.Split(header, ";") {
-		if strings.HasPrefix(strings.TrimSpace(part), prefix) {
-			return true
+	for part := range strings.SplitSeq(header, ";") {
+		part = strings.TrimSpace(part)
+		if after, ok := strings.CutPrefix(part, prefix); ok {
+			return after
+		}
+		if len(part) > len(prefix) && strings.EqualFold(part[:len(name)], name) && part[len(name)] == '=' {
+			return part[len(name)+1:]
 		}
 	}
-	return false
+	return ""
+}
+
+// cookieHeaderHasName 判断 Cookie 头是否含有指定名称（不会误匹配 mp_r_psession）。
+func cookieHeaderHasName(header, name string) bool {
+	return cookieValueFromHeader(header, name) != ""
 }

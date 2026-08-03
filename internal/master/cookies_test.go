@@ -4,7 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
+
+	"1panel-agent/internal/protocol"
 )
 
 func TestCookieHeaderForRemote(t *testing.T) {
@@ -69,5 +72,39 @@ func TestRewriteSetCookieToRemoteNamespace(t *testing.T) {
 	}
 	if vals[1] != "theme=dark; Path=/" {
 		t.Fatalf("theme %q", vals[1])
+	}
+}
+
+func TestAlignRemoteCSRFHeader(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "local-csrf"})
+	r.AddCookie(&http.Cookie{Name: "mp_r_pcsrftoken", Value: "remote-csrf"})
+	r.Header.Set("X-CSRF-Token", "local-csrf")
+
+	headers := protocol.HeaderFromHTTP(r.Header)
+	applyRemoteRequestCookies(headers, r)
+
+	got := ""
+	for k, vals := range headers {
+		if strings.EqualFold(k, "X-CSRF-Token") && len(vals) > 0 {
+			got = vals[0]
+		}
+	}
+	if got != "remote-csrf" {
+		t.Fatalf("csrf header=%q want remote-csrf; headers=%v", got, headers)
+	}
+}
+
+func TestAlignRemoteCSRFHeaderStripsLocalWhenNoRemote(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "local-csrf"})
+	r.Header.Set("X-CSRF-Token", "local-csrf")
+
+	headers := protocol.HeaderFromHTTP(r.Header)
+	applyRemoteRequestCookies(headers, r)
+	for k := range headers {
+		if strings.EqualFold(k, "X-CSRF-Token") {
+			t.Fatalf("local csrf header must be stripped, got %v", headers[k])
+		}
 	}
 }

@@ -45,12 +45,35 @@ func cookieHeaderForRemote(r *http.Request) string {
 	return strings.Join(parts, "; ")
 }
 
-// applyRemoteRequestCookies 将请求头中的 Cookie 改写为远端命名空间视图。
+// applyRemoteRequestCookies 将请求头中的 Cookie 改写为远端命名空间视图，并校正 CSRF 头。
 func applyRemoteRequestCookies(headers map[string][]string, r *http.Request) {
 	delete(headers, "Cookie")
 	if v := cookieHeaderForRemote(r); v != "" {
 		headers["Cookie"] = []string{v}
 	}
+	alignRemoteCSRFHeader(headers, r)
+}
+
+// alignRemoteCSRFHeader 让 X-CSRF-Token 与远端 pcsrftoken 一致。
+// 1Panel 前端从 document.cookie 读本地 pcsrftoken 填头，与 mp_r_* 会话错位会报 CSRF token invalid。
+func alignRemoteCSRFHeader(headers map[string][]string, r *http.Request) {
+	for k := range headers {
+		if strings.EqualFold(k, "X-CSRF-Token") {
+			delete(headers, k)
+		}
+	}
+	var remoteCSRF string
+	for _, c := range r.Cookies() {
+		if strings.EqualFold(c.Name, remoteCookiePrefix+"pcsrftoken") {
+			remoteCSRF = c.Value
+			break
+		}
+	}
+	if remoteCSRF == "" {
+		// 浏览器尚无远端 CSRF：去掉本地 CSRF 头，避免与 Agent 注入的会话 Cookie 冲突。
+		return
+	}
+	headers["X-Csrf-Token"] = []string{remoteCSRF}
 }
 
 // rewriteSetCookieToRemoteNamespace 将响应 Set-Cookie 中的面板 Cookie 改名为 mp_r_*。
