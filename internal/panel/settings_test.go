@@ -13,7 +13,7 @@ func TestParseUserInfo(t *testing.T) {
 		{
 			name: "en",
 			in: "Panel address: http://$LOCAL_IP:62045/tomas \n" +
-				"User: ankio\nUser password: ********\n",
+				"user: ankio\nUser password: ********\n",
 			port: 62045,
 			ent:  "tomas",
 			user: "ankio",
@@ -46,7 +46,7 @@ func TestParseUserInfo(t *testing.T) {
 }
 
 func TestParseUserInfoMissingPort(t *testing.T) {
-	if _, err := parseUserInfo([]byte("User: ankio\n")); err == nil {
+	if _, err := parseUserInfo([]byte("user: ankio\n")); err == nil {
 		t.Fatal("expected error")
 	}
 }
