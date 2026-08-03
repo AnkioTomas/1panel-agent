@@ -24,7 +24,8 @@ func AutofillPanel(cfg *config.Agent) {
 	log.Printf("detected local 1Panel %s user=%s entrance=%s", cfg.PanelURL, cfg.PanelUser, cfg.PanelEntrance)
 }
 
-// SetPassword 加密保存本机 1Panel 密码（供隧道侧自动登录）。
+// SetPassword 校验本机 1Panel 密码后加密落盘（供隧道侧自动登录）。
+// 不先登录验证就存盘：装错密码只会在切节点时爆炸，而且会把 127.0.0.1 打进验证码锁定。
 func SetPassword(plain string) error {
 	if plain == "" {
 		return fmt.Errorf("password required")
@@ -34,6 +35,12 @@ func SetPassword(plain string) error {
 		return err
 	}
 	AutofillPanel(cfg)
+	if cfg.PanelURL == "" || cfg.PanelUser == "" {
+		return fmt.Errorf("无法探测本机 1Panel 用户（需要 1pctl/1panel）")
+	}
+	if _, err := panel.Login(cfg.PanelURL, cfg.PanelEntrance, cfg.PanelUser, plain); err != nil {
+		return fmt.Errorf("密码验证失败（用户 %s @ %s）: %w", cfg.PanelUser, cfg.PanelURL, err)
+	}
 	enc, err := config.EncryptSecret(plain)
 	if err != nil {
 		return err

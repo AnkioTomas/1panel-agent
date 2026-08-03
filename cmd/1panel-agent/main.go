@@ -177,7 +177,7 @@ func runAgentSetpwd(args []string) error {
 		return err
 	}
 	path, _ := config.Path()
-	fmt.Printf("password saved (encrypted) to %s\n", path)
+	fmt.Printf("password verified & saved (encrypted) to %s\n", path)
 	return nil
 }
 

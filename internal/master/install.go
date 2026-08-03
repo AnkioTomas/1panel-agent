@@ -176,6 +176,22 @@ ask_panel_password() {
   done
 }
 
+# 保存前对本机面板做真实登录校验；失败则清空重问（最多 5 次）。
+save_panel_password() {
+  local tries=0
+  while true; do
+    ask_panel_password
+    log "验证并保存面板密码…"
+    if "$BIN_PATH" agent setpwd --password "$PANEL_PASS"; then
+      return 0
+    fi
+    echo "密码验证失败，请重试" > /dev/tty
+    PANEL_PASS=""
+    tries=$((tries + 1))
+    [[ "$tries" -lt 5 ]] || die "密码验证失败次数过多"
+  done
+}
+
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
@@ -189,9 +205,7 @@ install -m 755 "$TMP" "$BIN_PATH"
 log "写入配置 ${MASTER}"
 "$BIN_PATH" agent install "$MASTER" "$TOKEN" >/dev/null
 
-ask_panel_password
-log "保存面板密码（加密）"
-"$BIN_PATH" agent setpwd --password "$PANEL_PASS" >/dev/null
+save_panel_password
 
 cat > "$UNIT_PATH" <<EOF
 [Unit]

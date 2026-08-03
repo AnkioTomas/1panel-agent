@@ -67,6 +67,7 @@ func TestAgentInstallScript(t *testing.T) {
 		"/agent.bin?",
 		"agent install",
 		"ask_panel_password",
+		"save_panel_password",
 		"agent setpwd",
 		"agent run",
 		"1pm-agent.service",
