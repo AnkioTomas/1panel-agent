@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"1panel-agent/internal/agent"
 	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/master"
+	"1panel-agent/internal/role"
 
 	"golang.org/x/term"
 )
@@ -33,6 +35,10 @@ func main() {
 		}
 	case "agent":
 		if err := runAgent(os.Args[2:]); err != nil {
+			fatal(err)
+		}
+	case "uninstall":
+		if err := runUninstall(); err != nil {
 			fatal(err)
 		}
 	case "version", "-v", "--version":
@@ -80,6 +86,50 @@ func runAgent(args []string) error {
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
 	}
+}
+
+// runUninstall 按本机已安装角色自动卸载（master / agent / 两者）。
+func runUninstall() error {
+	hasMaster := role.MasterPresent()
+	hasAgent := role.AgentPresent()
+	if !hasMaster && !hasAgent {
+		return fmt.Errorf("未检测到 1pm master 或 agent，无需卸载")
+	}
+	if hasAgent {
+		log.Println("uninstall: detected agent")
+		if err := agent.Clean(); err != nil {
+			return err
+		}
+	}
+	if hasMaster {
+		log.Println("uninstall: detected master")
+		if err := master.Clean(); err != nil {
+			return err
+		}
+	}
+	removeSelfBin()
+	switch {
+	case hasMaster && hasAgent:
+		fmt.Println("1pm master + agent uninstalled.")
+	case hasMaster:
+		fmt.Println("1pm master uninstalled.")
+	default:
+		fmt.Println("1pm agent uninstalled.")
+	}
+	return nil
+}
+
+func removeSelfBin() {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("warn: locate binary: %v", err)
+		return
+	}
+	if err := os.Remove(exe); err != nil {
+		log.Printf("warn: remove binary %s: %v", exe, err)
+		return
+	}
+	log.Printf("uninstall: removed binary %s", exe)
 }
 
 // runAgentInstall 安装时写入 Master/Token（不启动长连接）。
@@ -137,18 +187,20 @@ func usage() {
 
 Usage:
   1pm master                          start master
-  1pm master uninstall                stop service, restore 1Panel port, remove state & binary
+  1pm uninstall                       auto-detect and uninstall master and/or agent
+  1pm master uninstall                uninstall master only
+  1pm agent uninstall                 uninstall agent only
 
   1pm agent install <host:port> <token>
                                       write config at install time (panel URL/user auto-detected)
   1pm agent run                       start agent with saved config
   1pm agent setpwd [--password PASS]  set 1Panel password (encrypted at rest)
-  1pm agent uninstall                 stop service, remove config & binary
 
   1pm version
 
 Master UI: http://<master>:<panel-port>/__mp/
   Agent download / WS auth = HMAC timestamp+sign (not raw token query).
+  One host cannot run master and agent at the same time.
 `, buildinfo.Version)
 }
 
