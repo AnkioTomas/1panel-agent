@@ -14,8 +14,8 @@ import (
 const masterServiceFile = "/etc/systemd/system/1pm-master.service"
 
 // Uninstall stops the master service, restores the original 1Panel port,
-// removes state files, and optionally removes the binary itself.
-func Uninstall(removeBin bool) error {
+// removes state files, and removes the binary itself.
+func Uninstall() error {
 	quietExec("systemctl", "stop", "1pm-master.service")
 	quietExec("systemctl", "disable", "1pm-master.service")
 	log.Println("uninstall: stopped 1pm-master.service")
@@ -45,9 +45,7 @@ func Uninstall(removeBin bool) error {
 		}
 	}
 
-	if removeBin {
-		removeSelfBin()
-	}
+	removeSelfBin()
 
 	fmt.Println("1pm master uninstalled.")
 	return nil

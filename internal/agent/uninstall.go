@@ -11,9 +11,9 @@ import (
 
 const agentServiceFile = "/etc/systemd/system/1pm-agent.service"
 
-// Uninstall stops the agent service, removes config, and optionally removes
+// Uninstall stops the agent service, removes config, and removes
 // the binary itself.
-func Uninstall(removeBin bool) error {
+func Uninstall() error {
 	quietExec("systemctl", "stop", "1pm-agent.service")
 	quietExec("systemctl", "disable", "1pm-agent.service")
 	log.Println("uninstall: stopped 1pm-agent.service")
@@ -28,9 +28,7 @@ func Uninstall(removeBin bool) error {
 		}
 	}
 
-	if removeBin {
-		removeSelfBin()
-	}
+	removeSelfBin()
 
 	fmt.Println("1pm agent uninstalled.")
 	return nil
