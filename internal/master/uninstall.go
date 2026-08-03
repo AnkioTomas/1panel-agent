@@ -14,8 +14,8 @@ import (
 // masterServiceFile 是 Master 的 systemd unit 路径。
 const masterServiceFile = "/etc/systemd/system/1pm-master.service"
 
-// Uninstall 停止 Master 服务、恢复原 1Panel 端口、清理状态文件并删除自身二进制。
-func Uninstall() error {
+// Clean 停止 Master、恢复 1Panel 端口、清理状态/unit，保留二进制。
+func Clean() error {
 	quietExec("systemctl", "stop", "1pm-master.service")
 	quietExec("systemctl", "disable", "1pm-master.service")
 	log.Println("uninstall: stopped 1pm-master.service")
@@ -44,9 +44,15 @@ func Uninstall() error {
 			log.Printf("uninstall: removed state dir %s", dir)
 		}
 	}
+	return nil
+}
 
+// Uninstall 停止 Master 服务、恢复原 1Panel 端口、清理状态并删除二进制。
+func Uninstall() error {
+	if err := Clean(); err != nil {
+		return err
+	}
 	removeSelfBin()
-
 	fmt.Println("1pm master uninstalled.")
 	return nil
 }

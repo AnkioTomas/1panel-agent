@@ -70,6 +70,8 @@ func TestAgentInstallScript(t *testing.T) {
 		"agent setpwd",
 		"agent run",
 		"1pm-agent.service",
+		"1pm-master.service",
+		"不能同时作为 agent",
 		"安装完成",
 	} {
 		if !strings.Contains(out, needle) {

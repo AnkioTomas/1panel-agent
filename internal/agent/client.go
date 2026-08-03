@@ -24,6 +24,7 @@ import (
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/panel"
 	"1panel-agent/internal/protocol"
+	"1panel-agent/internal/role"
 
 	"github.com/coder/websocket"
 	"github.com/xtaci/smux"
@@ -40,6 +41,9 @@ type Client struct {
 
 // Run 启动 Agent 客户端逻辑，维持与 Master 的长连接并处理自动重连。
 func Run(cfg *config.Agent) error {
+	if err := role.RefuseAgentIfMaster(); err != nil {
+		return err
+	}
 	c := &Client{Cfg: cfg}
 	backoff := time.Second
 	for {

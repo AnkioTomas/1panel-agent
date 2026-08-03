@@ -330,6 +330,11 @@ main() {
   have_cmd systemctl || die "systemd required"
   require_1panel
 
+  # 一台机器不能同时是 agent 和 master
+  if [[ -f /etc/systemd/system/1pm-agent.service ]] || [[ -f /root/.1panel-agent/agent.json ]]; then
+    die "本机已安装 1pm agent，不能同时作为 master。先执行: 1pm uninstall"
+  fi
+
   local os arch tag asset base tmpdir ver
   os="$(detect_os)"
   arch="$(detect_arch)"

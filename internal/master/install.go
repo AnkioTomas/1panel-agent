@@ -125,6 +125,11 @@ if [[ "$(id -u)" -ne 0 ]]; then
   die "run as root (use: curl ... | sudo bash)"
 fi
 
+# 一台机器不能同时是 agent 和 master
+if [[ -f /etc/systemd/system/1pm-master.service ]] || [[ -f /var/lib/1pm/master.json ]]; then
+  die "本机已安装 1pm master，不能同时作为 agent。先执行: 1pm uninstall"
+fi
+
 uname_m="$(uname -m)"
 case "$uname_m" in
   x86_64|amd64) ARCH=amd64 ;;

@@ -17,6 +17,7 @@ import (
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/panel"
 	"1panel-agent/internal/protocol"
+	"1panel-agent/internal/role"
 
 	"github.com/coder/websocket"
 	"github.com/xtaci/smux"
@@ -38,6 +39,9 @@ type Server struct {
 
 // New 加载 Master 状态、接管 1Panel 端口并构造 Server。
 func New() (*Server, error) {
+	if err := role.RefuseMasterIfAgent(); err != nil {
+		return nil, err
+	}
 	state, err := config.LoadMasterOrEmpty()
 	if err != nil {
 		return nil, err
