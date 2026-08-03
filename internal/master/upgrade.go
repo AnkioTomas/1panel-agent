@@ -165,10 +165,7 @@ func comparePanelVersion(a, b string) int {
 		}
 		return 1
 	}
-	n := len(as)
-	if len(bs) > n {
-		n = len(bs)
-	}
+	n := max(len(bs), len(as))
 	for i := 0; i < n; i++ {
 		ai, bi := 0, 0
 		if i < len(as) {

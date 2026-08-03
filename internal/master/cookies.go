@@ -36,8 +36,8 @@ func cookieHeaderForRemote(r *http.Request) string {
 		if isPanelCookie(c.Name) {
 			continue
 		}
-		if strings.HasPrefix(c.Name, remoteCookiePrefix) {
-			parts = append(parts, strings.TrimPrefix(c.Name, remoteCookiePrefix)+"="+c.Value)
+		if after, ok := strings.CutPrefix(c.Name, remoteCookiePrefix); ok {
+			parts = append(parts, after+"="+c.Value)
 			continue
 		}
 		parts = append(parts, c.Name+"="+c.Value)
@@ -54,21 +54,10 @@ func applyRemoteRequestCookies(headers map[string][]string, r *http.Request) {
 }
 
 // rewriteSetCookieToRemoteNamespace 将响应 Set-Cookie 中的面板 Cookie 改名为 mp_r_*。
+// 键约定为 canonical "Set-Cookie"（来自 http.Header / HeaderFromHTTP）。
 func rewriteSetCookieToRemoteNamespace(headers map[string][]string) {
-	vals, ok := headers["Set-Cookie"]
-	if !ok {
-		for k, v := range headers {
-			if strings.EqualFold(k, "Set-Cookie") {
-				vals = v
-				delete(headers, k)
-				ok = true
-				break
-			}
-		}
-	} else {
-		delete(headers, "Set-Cookie")
-	}
-	if !ok || len(vals) == 0 {
+	vals := headers["Set-Cookie"]
+	if len(vals) == 0 {
 		return
 	}
 	out := make([]string, 0, len(vals))
@@ -81,9 +70,6 @@ func rewriteSetCookieToRemoteNamespace(headers map[string][]string) {
 // renameSetCookieToRemote 改写单条 Set-Cookie：面板 Cookie 加前缀，并强制 Path=/。
 func renameSetCookieToRemote(setCookie string) string {
 	parts := strings.Split(setCookie, ";")
-	if len(parts) == 0 {
-		return setCookie
-	}
 	nv := strings.TrimSpace(parts[0])
 	name, value, found := strings.Cut(nv, "=")
 	if !found {
@@ -102,19 +88,4 @@ func renameSetCookieToRemote(setCookie string) string {
 		}
 	}
 	return strings.Join(parts, ";")
-}
-
-// setRemotePanelCookie 向浏览器写入远端命名空间下的面板 Cookie。
-func setRemotePanelCookie(w http.ResponseWriter, name, value string, httpOnly bool) {
-	if isPanelCookie(name) {
-		name = remoteCookiePrefix + name
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     name,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: httpOnly,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-	})
 }

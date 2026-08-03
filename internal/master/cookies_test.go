@@ -3,6 +3,7 @@ package master
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 )
 
@@ -23,12 +24,7 @@ func TestCookieHeaderForRemote(t *testing.T) {
 }
 
 func containsCookie(header, part string) bool {
-	for _, p := range splitCookieHeader(header) {
-		if p == part {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(splitCookieHeader(header), part)
 }
 
 func splitCookieHeader(h string) []string {
