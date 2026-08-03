@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"1panel-agent/internal/config"
@@ -30,6 +31,7 @@ type Server struct {
 	LocalPanel string // http://127.0.0.1:internal
 	reg        *Registry
 	localProxy *httputil.ReverseProxy
+	tokenMu    sync.RWMutex
 }
 
 type Options struct {
@@ -232,7 +234,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := smux.Server(netConn, smuxConfig())
+	session, err := smux.Server(netConn, protocol.SmuxConfig())
 	if err != nil {
 		log.Printf("smux server: %v", err)
 		return
@@ -255,13 +257,6 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	<-session.CloseChan()
 	s.reg.Remove(info.ID, session)
 	log.Printf("agent offline: %s (%s)", info.Hostname, info.ID)
-}
-
-func smuxConfig() *smux.Config {
-	cfg := smux.DefaultConfig()
-	cfg.KeepAliveInterval = 20 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
-	return cfg
 }
 
 func isWebSocket(r *http.Request) bool {

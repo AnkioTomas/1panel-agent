@@ -3,24 +3,20 @@ package master
 import (
 	"encoding/json"
 	"net/http"
-	"sync"
 
 	"1panel-agent/internal/config"
 )
 
-// tokenMu guards Server.Token during rotate vs concurrent auth checks.
-var tokenMu sync.RWMutex
-
 func (s *Server) currentToken() string {
-	tokenMu.RLock()
-	defer tokenMu.RUnlock()
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
 	return s.Token
 }
 
 func (s *Server) setToken(tok string) {
-	tokenMu.Lock()
+	s.tokenMu.Lock()
 	s.Token = tok
-	tokenMu.Unlock()
+	s.tokenMu.Unlock()
 }
 
 func (s *Server) tokenOK(got string) bool {

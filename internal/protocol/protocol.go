@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
+
+	"github.com/xtaci/smux"
 )
 
 const (
@@ -184,4 +187,13 @@ func ApplyHeader(dst http.Header, src map[string][]string) {
 			dst.Add(k, v)
 		}
 	}
+}
+
+// SmuxConfig returns the shared smux configuration used by both Master and Agent.
+// Keeping it here ensures KeepAlive parameters stay in sync across both ends.
+func SmuxConfig() *smux.Config {
+	cfg := smux.DefaultConfig()
+	cfg.KeepAliveInterval = 20 * time.Second
+	cfg.KeepAliveTimeout = 60 * time.Second
+	return cfg
 }

@@ -94,7 +94,7 @@ func (c *Client) connectOnce() error {
 		return fmt.Errorf("register rejected: %s", ack.Error)
 	}
 
-	session, err := smux.Client(netConn, smuxConfig())
+	session, err := smux.Client(netConn, protocol.SmuxConfig())
 	if err != nil {
 		return fmt.Errorf("smux client: %w", err)
 	}
@@ -108,13 +108,6 @@ func (c *Client) connectOnce() error {
 		}
 		go c.handleStream(stream)
 	}
-}
-
-func smuxConfig() *smux.Config {
-	cfg := smux.DefaultConfig()
-	cfg.KeepAliveInterval = 20 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
-	return cfg
 }
 
 func (c *Client) handleStream(stream *smux.Stream) {

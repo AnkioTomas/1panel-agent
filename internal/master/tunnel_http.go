@@ -1,12 +1,9 @@
 package master
 
 import (
-	"bufio"
 	"bytes"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	"1panel-agent/internal/protocol"
 
@@ -60,26 +57,27 @@ func (t *tunnelTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	raw := buildHTTPResponse(respMeta.Status, respMeta.Headers, payload)
-	return http.ReadResponse(bufio.NewReader(bytes.NewReader(raw)), req)
-}
-
-func buildHTTPResponse(status int, headers map[string][]string, body []byte) []byte {
+	status := respMeta.Status
 	if status == 0 {
 		status = 200
 	}
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "HTTP/1.1 %d %s\r\n", status, http.StatusText(status))
-	for k, vals := range headers {
+	resp := &http.Response{
+		StatusCode:    status,
+		Status:        http.StatusText(status),
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(bytes.NewReader(payload)),
+		ContentLength: int64(len(payload)),
+		Request:       req,
+	}
+	for k, vals := range respMeta.Headers {
 		ck := http.CanonicalHeaderKey(k)
 		if ck == "Content-Length" || ck == "Transfer-Encoding" {
 			continue
 		}
-		for _, v := range vals {
-			fmt.Fprintf(&b, "%s: %s\r\n", k, v)
-		}
+		resp.Header[ck] = vals
 	}
-	fmt.Fprintf(&b, "Content-Length: %s\r\n\r\n", strconv.Itoa(len(body)))
-	b.Write(body)
-	return b.Bytes()
+	return resp, nil
 }

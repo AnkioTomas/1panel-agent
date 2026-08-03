@@ -124,13 +124,11 @@ func LocalPanelURL(port int) string {
 }
 
 func InternalPort(publicPort int) int {
-	// Keep within uint16 and avoid collision with common services.
-	p := publicPort + 100000
+	// Prefer moving up by 10000; if that overflows, move down by 10000.
+	// Either way the result must be a valid port and differ from publicPort.
+	p := publicPort + 10000
 	if p > 65535 {
-		p = publicPort + 10000
-	}
-	if p > 65535 {
-		p = 152045
+		p = publicPort - 10000
 	}
 	return p
 }
