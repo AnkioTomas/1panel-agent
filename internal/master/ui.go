@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"os"
 	"strings"
 
 	"1panel-agent/internal/buildinfo"
+	"1panel-agent/internal/hoststats"
 	"1panel-agent/internal/panel"
 )
 
@@ -60,7 +62,7 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// apiAgents 拉取各 Agent 最新资源快照后返回在线列表。
+// apiAgents 拉取各 Agent 最新资源快照后返回在线列表（含主节点）。
 func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -73,6 +75,7 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 		Name         string  `json:"name,omitempty"`
 		Group        string  `json:"group,omitempty"`
 		DisplayName  string  `json:"display_name"`
+		IsMaster     bool    `json:"is_master,omitempty"`
 		PanelURL     string  `json:"panel_url"`
 		RemoteIP     string  `json:"remote_ip"`
 		PanelVersion string  `json:"panel_version"`
@@ -82,8 +85,29 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 		MemUsed      uint64  `json:"mem_used"`
 		OpenURL      string  `json:"open_url"`
 	}
+
+	hs := hoststats.Collect()
+	hostName, _ := os.Hostname()
+	master := item{
+		ID:           "local",
+		Hostname:     hostName,
+		Name:         "主节点",
+		Group:        "主节点",
+		DisplayName:  "主节点",
+		IsMaster:     true,
+		PanelURL:     s.LocalPanel,
+		RemoteIP:     s.displayHost(r),
+		PanelVersion: panel.ReadSystemVersion(),
+		AgentVersion: buildinfo.Version,
+		CPUPercent:   hs.CPUPercent,
+		MemTotal:     hs.MemTotal,
+		MemUsed:      hs.MemUsed,
+		OpenURL:      "/__mp/local",
+	}
+
 	list := s.reg.List()
-	out := make([]item, 0, len(list))
+	out := make([]item, 0, len(list)+1)
+	out = append(out, master)
 	for _, a := range list {
 		out = append(out, item{
 			ID:           a.ID,
@@ -121,7 +145,21 @@ type pageData struct {
 // renderNodes 渲染 /__mp/ 节点管理页。
 func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 	host := s.AdvertiseHost(r)
-	agents := s.reg.List()
+	hs := hoststats.Collect()
+	hostName, _ := os.Hostname()
+	masterInfo := AgentInfo{
+		ID:           "local",
+		Hostname:     hostName,
+		Name:         "主节点",
+		Group:        "主节点",
+		RemoteIP:     s.displayHost(r),
+		PanelVersion: panel.ReadSystemVersion(),
+		AgentVersion: buildinfo.Version,
+		CPUPercent:   hs.CPUPercent,
+		MemTotal:     hs.MemTotal,
+		MemUsed:      hs.MemUsed,
+	}
+	agents := append([]AgentInfo{masterInfo}, s.reg.List()...)
 	data := pageData{
 		Agents:        agents,
 		Register:      s.InstallCommand(r),
@@ -129,9 +167,9 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 		DeviceIP:      s.displayHost(r),
 		Entrance:      s.Entrance,
 		LocalPanel:    s.LocalPanel,
-		MasterVersion: panel.ReadSystemVersion(),
+		MasterVersion: masterInfo.PanelVersion,
 		NodeVersion:   buildinfo.Version,
-		Online:        len(agents),
+		Online:        len(s.reg.List()),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = nodesTmpl.Execute(w, data)
@@ -332,9 +370,9 @@ tr:last-child td{border-bottom:0}
             <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
             <td>{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</td>
             <td>{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
-            <td class="col-cpu">-</td>
+            <td class="col-cpu">{{printf "%.1f%%" .CPUPercent}}</td>
             <td class="col-mem">-</td>
-            <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
+            <td>{{if eq .ID "local"}}<a class="btn primary-panel" href="/__mp/local">进入面板</a>{{else}}<a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a>{{end}}</td>
           </tr>
         {{end}}
         </tbody>
@@ -495,18 +533,22 @@ function displayName(a){
   return (a && (a.display_name||a.name||a.hostname||a.id)) || '-';
 }
 function groupLabel(a){
+  if(a && a.is_master) return '主节点';
   const g=(a && a.group)||'';
   return g.trim()?g.trim():'未分组';
 }
 function renderAgents(list){
   const wrap=document.getElementById('agentsWrap');
   const online=document.getElementById('statOnline');
-  if(online) online.textContent=String(list.length);
+  const agentsOnly=(list||[]).filter(a=>!a.is_master);
+  if(online) online.textContent=String(agentsOnly.length);
   if(!list.length){
-    wrap.innerHTML='<p class="empty" id="agentsEmpty">暂无在线 Agent，请先在子节点执行上方注册命令</p>';
+    wrap.innerHTML='<p class="empty" id="agentsEmpty">暂无在线节点</p>';
     return;
   }
   const sorted=list.slice().sort((x,y)=>{
+    if(x.is_master && !y.is_master) return -1;
+    if(!x.is_master && y.is_master) return 1;
     const gx=groupLabel(x), gy=groupLabel(y);
     if(gx!==gy) return gx.localeCompare(gy,'zh');
     return displayName(x).localeCompare(displayName(y),'zh');
@@ -523,7 +565,8 @@ function renderAgents(list){
     const av=a.agent_version||'-';
     const pv=a.panel_version||'-';
     const mem=(a.mem_total>0)?(fmtBytes(a.mem_used)+' / '+fmtBytes(a.mem_total)):'-';
-    rows+='<tr data-agent-id="'+esc(a.id)+'">'+
+    const href=a.open_url || (a.is_master?'/__mp/local':('/__mp/go/'+encodeURIComponent(a.id)));
+    rows+='<tr data-agent-id="'+esc(a.id||'')+'">' +
       '<td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>'+
       '<td>'+esc(displayName(a))+'</td>'+
       '<td style="color:var(--text-secondary)">'+esc(ip)+'</td>'+
@@ -531,7 +574,7 @@ function renderAgents(list){
       '<td>'+esc(pv)+'</td>'+
       '<td class="col-cpu">'+fmtCPU(a.cpu_percent)+'</td>'+
       '<td class="col-mem">'+mem+'</td>'+
-      '<td><a class="btn primary-panel" href="/__mp/go/'+encodeURIComponent(a.id)+'">进入面板</a></td>'+
+      '<td><a class="btn primary-panel" href="'+esc(href)+'">进入面板</a></td>'+
       '</tr>';
   });
   wrap.innerHTML='<table><thead><tr>'+

@@ -15,14 +15,16 @@ import (
 type clientHostKey struct{}
 
 // sidebarHook 生成注入 1Panel HTML 的侧边栏切换脚本（含 Master IP 展示）。
-func sidebarHook(masterIP string) string {
+func sidebarHook(masterIP, entrance string) string {
 	if masterIP == "" {
 		masterIP = "-"
 	}
 	ipJSON, _ := json.Marshal(masterIP)
+	entJSON, _ := json.Marshal(strings.Trim(entrance, "/"))
 	const tpl = `<script data-mp-hook="1">(function(){
 // Always Master advertise IP (public_host). Never the current Agent IP.
 var MASTER_IP=__MASTER_IP__;
+var ENTRANCE=__ENTRANCE__;
 var PATCHED=false;
 var LABEL_TIMER=0;
 
@@ -31,6 +33,28 @@ function cookie(name){
   return m?decodeURIComponent(m[1]):"";
 }
 function currentID(){ return cookie("mp_node")||""; }
+
+function clearMpNode(){
+  document.cookie="mp_node=; Path=/; Max-Age=0; SameSite=Lax";
+}
+function masterLoginURL(){
+  return ENTRANCE ? ("/"+ENTRANCE) : "/";
+}
+function goMasterLogin(){
+  clearMpNode();
+  location.replace(masterLoginURL());
+}
+function isLoginRoute(){
+  var p=(location.pathname||"").toLowerCase();
+  var h=(location.hash||"").toLowerCase();
+  if(p.indexOf("/api/")===0) return false;
+  if(p==="/login" || p.indexOf("/login/")===0 || /\/login$/.test(p)) return true;
+  if(h.indexOf("login")>=0) return true;
+  return false;
+}
+function enforceMasterLogin(){
+  if(currentID() && isLoginRoute()) goMasterLogin();
+}
 
 function ensureStyle(){
   if(document.getElementById("mp-node-style"))return;
@@ -126,7 +150,7 @@ function renderPop(btn, agents){
   if(!agents || !agents.length){
     html+='<div class="mp-ns-empty">暂无在线 Agent</div>';
   } else {
-    var sorted=agents.slice().sort(function(x,y){
+    var sorted=agents.filter(function(a){ return !a.is_master; }).slice().sort(function(x,y){
       var gx=agentGroup(x), gy=agentGroup(y);
       if(gx!==gy) return gx<gy?-1:gx>gy?1:0;
       var tx=agentTitle(x), ty=agentTitle(y);
@@ -172,7 +196,7 @@ function renderPop(btn, agents){
     else if(kind==="go") go("/__mp/go/"+el.getAttribute("data-id"));
     else if(kind==="logout"){
       closePop();
-      fetch("/api/v2/core/auth/logout",{method:"POST",credentials:"include"}).finally(function(){ location.href="/"; });
+      fetch("/api/v2/core/auth/logout",{method:"POST",credentials:"include"}).finally(function(){ goMasterLogin(); });
     }
   });
   setTimeout(function(){ document.addEventListener("click", onDocClick, true); }, 0);
@@ -272,6 +296,10 @@ setInterval(function(){
 
 try{
   fetch("/__mp/touch",{credentials:"include"}).catch(function(){});
+  enforceMasterLogin();
+  window.addEventListener("hashchange", enforceMasterLogin);
+  window.addEventListener("popstate", enforceMasterLogin);
+  setInterval(enforceMasterLogin, 1000);
   var u=new URL(location.href);
   var ret=u.searchParams.get("mp_return")||sessionStorage.getItem("mp_return");
   if(u.searchParams.get("mp_return")) sessionStorage.setItem("mp_return",ret);
@@ -282,7 +310,8 @@ try{
   }
 }catch(err){}
 })();</script>`
-	return strings.ReplaceAll(tpl, "__MASTER_IP__", string(ipJSON))
+	out := strings.ReplaceAll(tpl, "__MASTER_IP__", string(ipJSON))
+	return strings.ReplaceAll(out, "__ENTRANCE__", string(entJSON))
 }
 
 // injectHookHTML 向 HTML 响应注入侧边栏 Hook；已注入则原样返回。
@@ -290,7 +319,7 @@ func (s *Server) injectHookHTML(body []byte, masterIP string) []byte {
 	if bytes.Contains(body, []byte(`data-mp-hook="1"`)) {
 		return body
 	}
-	hook := []byte(sidebarHook(masterIP))
+	hook := []byte(sidebarHook(masterIP, s.Entrance))
 	if i := bytes.LastIndex(bytes.ToLower(body), []byte("</body>")); i >= 0 {
 		out := append([]byte{}, body[:i]...)
 		out = append(out, hook...)

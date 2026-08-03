@@ -117,6 +117,11 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	// Active remote node (cookie): root-path tunnel so 1Panel absolute /assets work.
 	if c, err := r.Cookie("mp_node"); err == nil && c.Value != "" {
+		// 登录页必须落在主节点：清 mp_node 后进安全入口。
+		if isLoginPagePath(r.URL.Path) {
+			s.redirectToMasterLogin(w, r, "")
+			return
+		}
 		if sess, ok := s.reg.Get(c.Value); ok {
 			targetPath := r.URL.RequestURI()
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -126,6 +131,8 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			s.proxyHTTP(w, r, sess, targetPath)
 			return
 		}
+		// Agent 已离线：丢掉过期节点选择，回主节点。
+		clearNodeCookie(w)
 	}
 	if s.localProxy != nil {
 		s.localProxy.ServeHTTP(w, r)
@@ -254,6 +261,13 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	}
 	respBody = maybeGunzip(respBody, respMeta.Headers)
 	dropHopHeaders(respMeta.Headers)
+
+	// 子节点把浏览器踢去登录页时，改走主节点登录。
+	if locationIsLoginRedirect(respMeta.Headers) {
+		s.redirectToMasterLogin(w, r, "")
+		return
+	}
+
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
 		respBody = s.injectHookHTML(respBody, s.displayHost(r))
 	}

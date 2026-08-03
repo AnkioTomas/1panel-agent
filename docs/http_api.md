@@ -77,6 +77,19 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 
 轮换 Token；旧 Agent 全部失效。响应含新的 `install` 命令。
 
+### POST /__mp/api/force-update
+
+通知所有在线 Agent 从本 Master 拉取 `/agent.bin`（同安装脚本），替换二进制并 `systemctl restart 1pm-agent`。
+
+```json
+{
+  "master_version": "v0.0.1",
+  "total": 1,
+  "ok": 1,
+  "results": [{"id":"…","name":"机房A-web1","ok":true}]
+}
+```
+
 ### GET /__mp/go/{id}
 
 Agent 须在线；写 `mp_node` 后 302 到安全入口。自动登录发生在后续隧道请求的 **Agent 侧**。

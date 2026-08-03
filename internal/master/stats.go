@@ -38,7 +38,8 @@ func fetchAgentStats(sess *Session) (*protocol.HostStats, error) {
 		return nil, err
 	}
 	defer stream.Close()
-	_ = stream.SetDeadline(time.Now().Add(3 * time.Second))
+	// 采样约 300ms，留足余量
+	_ = stream.SetDeadline(time.Now().Add(5 * time.Second))
 
 	meta := &protocol.RequestMeta{
 		Type:   protocol.StreamTypeStats,

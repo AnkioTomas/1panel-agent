@@ -102,12 +102,71 @@ func (s *Server) ensureMPAuth(w http.ResponseWriter, r *http.Request, path strin
 		return false
 	}
 
-	target := "/"
+	s.redirectToMasterLogin(w, r, "/__mp/")
+	return false
+}
+
+// clearNodeCookie 清除 mp_node，确保后续请求落在主节点。
+func clearNodeCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "mp_node",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// masterLoginPath 返回主节点登录入口路径（含安全入口）。
+func (s *Server) masterLoginPath() string {
 	if s.Entrance != "" {
-		target = "/" + strings.TrimPrefix(s.Entrance, "/")
+		return "/" + strings.TrimPrefix(s.Entrance, "/")
 	}
-	http.SetCookie(w, &http.Cookie{Name: "mp_node", Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, target+"?mp_return=/__mp/", http.StatusFound)
+	return "/"
+}
+
+// redirectToMasterLogin 清掉 mp_node 后跳到主节点登录页（可选带 mp_return）。
+func (s *Server) redirectToMasterLogin(w http.ResponseWriter, r *http.Request, mpReturn string) {
+	clearNodeCookie(w)
+	target := s.masterLoginPath()
+	if mpReturn != "" {
+		target = target + "?mp_return=" + mpReturn
+	}
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// isLoginPagePath 判断是否为面板登录页路径（排除 /api/）。
+func isLoginPagePath(path string) bool {
+	p := strings.ToLower(path)
+	if i := strings.IndexByte(p, '?'); i >= 0 {
+		p = p[:i]
+	}
+	if strings.HasPrefix(p, "/api/") {
+		return false
+	}
+	return p == "/login" || strings.HasSuffix(p, "/login")
+}
+
+// locationIsLoginRedirect 判断 Location 是否指向登录页。
+func locationIsLoginRedirect(headers map[string][]string) bool {
+	for k, vals := range headers {
+		if !strings.EqualFold(k, "Location") || len(vals) == 0 {
+			continue
+		}
+		loc := vals[0]
+		// 相对或绝对 URL：只看 path 段
+		if i := strings.Index(loc, "://"); i >= 0 {
+			rest := loc[i+3:]
+			if j := strings.IndexByte(rest, '/'); j >= 0 {
+				loc = rest[j:]
+			} else {
+				loc = "/"
+			}
+		}
+		if isLoginPagePath(loc) {
+			return true
+		}
+	}
 	return false
 }
 
