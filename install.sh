@@ -254,22 +254,9 @@ EOF
 }
 
 maybe_set_password() {
+  # Master 不再存面板密码；Agent 侧用 `1pm agent setpwd`。
   if [[ -n "$PANEL_PASS" ]]; then
-    log "save panel password for node-switch login"
-    "$BIN_PATH" master set --panel-pass "$PANEL_PASS"
-    return
-  fi
-  if [[ -t 0 ]]; then
-    local pass
-    read -r -s -p "Panel password for node-switch login (Enter to skip): " pass
-    echo
-    if [[ -n "$pass" ]]; then
-      "$BIN_PATH" master set --panel-pass "$pass"
-    else
-      warn "skipped — later: 1pm master set --panel-pass PASS"
-    fi
-  else
-    warn "no PANEL_PASS and no TTY — later: 1pm master set --panel-pass PASS"
+    warn "PANEL_PASS 已忽略：Master 不存面板密码。Agent 安装时可交互/环境变量调用 setpwd"
   fi
 }
 
