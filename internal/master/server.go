@@ -50,15 +50,12 @@ func New() (*Server, error) {
 	}
 
 	pub, internal, ent, err := EnsureTakeover(state)
-	listen := ":8080"
-	localPanel := ""
-	if err == nil {
-		entrance = ent
-		listen = fmt.Sprintf(":%d", pub)
-		localPanel = panel.LocalPanelURL(internal)
-	} else if state.InternalPort > 0 {
-		localPanel = panel.LocalPanelURL(state.InternalPort)
+	if err != nil {
+		return nil, fmt.Errorf("takeover 1Panel port: %w", err)
 	}
+	entrance = ent
+	listen := fmt.Sprintf(":%d", pub)
+	localPanel := panel.LocalPanelURL(internal)
 
 	if state.Token == "" {
 		tok, err := config.GenerateToken()
@@ -86,10 +83,13 @@ func New() (*Server, error) {
 		LocalPanel: localPanel,
 		reg:        NewRegistry(),
 	}
+	return s, nil
+}
+func (s *Server) initLocalProxy() error {
 	if s.LocalPanel != "" {
 		u, err := url.Parse(s.LocalPanel)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		s.localProxy = httputil.NewSingleHostReverseProxy(u)
 		s.localProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -97,10 +97,13 @@ func New() (*Server, error) {
 		}
 		s.wrapLocalProxy()
 	}
-	return s, nil
+	return nil
 }
 
 func (s *Server) Run() error {
+	if err := s.initLocalProxy(); err != nil {
+		return err
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
 	mux.HandleFunc("/agent.sh", s.handleAgentScript)
