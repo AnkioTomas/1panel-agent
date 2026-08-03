@@ -39,7 +39,6 @@ func New() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	dirty := false
 
 	pub, internal, entrance, panelUser, err := EnsureTakeover(state)
 	if err != nil {
@@ -54,12 +53,10 @@ func New() (*Server, error) {
 			return nil, err
 		}
 		state.Token = tok
-		dirty = true
 		log.Printf("generated install token (rotate anytime in /__mp/)")
-	}
-	if dirty {
 		_ = config.SaveMaster(state)
 	}
+
 	if state.PanelPassword == "" {
 		log.Printf("warn: panel password not set — run: 1pm master set --panel-pass PASS (needed for node switch login)")
 	}

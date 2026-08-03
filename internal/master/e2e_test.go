@@ -3,10 +3,13 @@ package master_test
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,10 +31,42 @@ func TestTunnelProxy(t *testing.T) {
 	}))
 	defer panel.Close()
 
+	home := t.TempDir()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	masterPort := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	u, _ := url.Parse(panel.URL)
+	panelPort, _ := strconv.Atoi(u.Port())
+
+	binDir := filepath.Join(home, "bin")
+	_ = os.MkdirAll(binDir, 0o755)
+	mock1panel := filepath.Join(binDir, "1panel")
+	mockScript := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "-l" ] && [ "$3" = "update" ] && [ "$4" = "port" ]; then
+    echo "Update successful!"
+    exit 0
+fi
+echo 'Panel address: http://127.0.0.1:%d/'
+echo 'User: testuser'
+`, masterPort)
+	_ = os.WriteFile(mock1panel, []byte(mockScript), 0o755)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	// Pre-create master config so EnsureTakeover won't fail when 1Panel CLI is missing in tests
+	_ = config.SaveMaster(&config.Master{
+		OriginalPort: masterPort,
+		InternalPort: panelPort,
+	})
+
 	srv, err := master.New()
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.LocalPanel = ""
 	masterAddr := srv.Listen
 	if strings.HasPrefix(masterAddr, ":") {
 		masterAddr = "127.0.0.1" + masterAddr
@@ -42,10 +77,6 @@ func TestTunnelProxy(t *testing.T) {
 			t.Logf("master exit: %v", err)
 		}
 	}()
-	time.Sleep(100 * time.Millisecond)
-
-	home := t.TempDir()
-	t.Setenv("HOME", home)
 	cfgPath := filepath.Join(home, ".1panel-agent")
 	if err := os.MkdirAll(cfgPath, 0o700); err != nil {
 		t.Fatal(err)
