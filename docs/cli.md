@@ -62,11 +62,11 @@ systemd：`ExecStart=/usr/local/bin/1pm master`
 写入 Master/Token；面板 URL/用户/安全入口由 `1panel user-info` 自动探测。若本机已装 Master → 拒绝。
 
 ```bash
-1pm agent install <host:port> <token>
-1pm agent install <host:port>/<token>   # 兼容写法
+1pm agent install <host:port> <token> [--name NAME] [--group GROUP]
+1pm agent install <host:port>/<token> [--name NAME] [--group GROUP]
 ```
 
-正常由 `/agent.sh` 调用；systemd 只跑 `agent run`。
+也可用环境变量 `NODE_NAME` / `NODE_GROUP`。正常由 `/agent.sh` 调用；systemd 只跑 `agent run`。
 
 ---
 

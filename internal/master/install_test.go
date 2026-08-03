@@ -16,14 +16,23 @@ func TestInstallCommand(t *testing.T) {
 	s := &Server{Token: "secret", PublicHost: "10.211.55.14", Listen: ":52045"}
 	r := httptest.NewRequest("GET", "http://10.211.55.14:52045/__mp/", nil)
 	cmd := s.InstallCommand(r)
-	if !strings.Contains(cmd, "http://10.211.55.14:52045/agent.sh?timestamp=") {
+	if !strings.Contains(cmd, "http://10.211.55.14:52045/agent.sh?") {
 		t.Fatalf("missing signed url: %q", cmd)
 	}
-	if !strings.Contains(cmd, "&sign=") {
+	if !strings.Contains(cmd, "timestamp=") {
+		t.Fatalf("missing timestamp: %q", cmd)
+	}
+	if !strings.Contains(cmd, "sign=") {
 		t.Fatalf("missing sign: %q", cmd)
 	}
 	if strings.Contains(cmd, "token=secret") {
 		t.Fatalf("raw token must not appear in install curl: %q", cmd)
+	}
+
+	r2 := httptest.NewRequest("GET", "http://10.211.55.14:52045/__mp/api/install-command?name=web1&group=prod", nil)
+	cmd2 := s.InstallCommand(r2)
+	if !strings.Contains(cmd2, "name=web1") || !strings.Contains(cmd2, "group=prod") {
+		t.Fatalf("missing name/group query: %q", cmd2)
 	}
 }
 
@@ -49,11 +58,13 @@ func TestAuthorizeAgentDownload(t *testing.T) {
 func TestAgentInstallScript(t *testing.T) {
 	var buf bytes.Buffer
 	err := agentInstallTmpl.Execute(&buf, struct {
-		Base, Master, Token, GOOS, GOARCH string
+		Base, Master, Token, Name, Group, GOOS, GOARCH string
 	}{
 		Base:   "http://10.211.55.14:52045",
 		Master: "10.211.55.14:52045",
 		Token:  "secret",
+		Name:   "web-1",
+		Group:  "prod",
 		GOOS:   "linux",
 		GOARCH: "arm64",
 	})
@@ -66,6 +77,8 @@ func TestAgentInstallScript(t *testing.T) {
 		"sign_query",
 		"/agent.bin?",
 		"agent install",
+		`--name "$NODE_NAME"`,
+		`--group "$NODE_GROUP"`,
 		"ask_panel_password",
 		"save_panel_password",
 		"agent setpwd",
@@ -74,6 +87,8 @@ func TestAgentInstallScript(t *testing.T) {
 		"1pm-master.service",
 		"不能同时作为 agent",
 		"安装完成",
+		`NODE_NAME="web-1"`,
+		`NODE_GROUP="prod"`,
 	} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("script missing %q", needle)

@@ -44,6 +44,9 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
   {
     "id": "a1b2c3d4e5f6a7b8",
     "hostname": "ubuntu-node2",
+    "name": "机房A-web1",
+    "group": "生产",
+    "display_name": "机房A-web1",
     "panel_url": "http://127.0.0.1:52045",
     "remote_ip": "10.211.55.14",
     "panel_version": "v2.2.4",
@@ -60,9 +63,11 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 
 ### GET /__mp/api/install-command
 
+可选 query：`name`、`group`（写入安装脚本，Agent 上线后按此展示）。
+
 ```json
 {
-  "install": "curl -fsSL \"http://host:port/agent.sh?timestamp=...&sign=...\" | sudo bash"
+  "install": "curl -fsSL \"http://host:port/agent.sh?timestamp=...&sign=...&name=...&group=...\" | sudo bash"
 }
 ```
 

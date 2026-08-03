@@ -66,6 +66,9 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 	type item struct {
 		ID           string  `json:"id"`
 		Hostname     string  `json:"hostname"`
+		Name         string  `json:"name,omitempty"`
+		Group        string  `json:"group,omitempty"`
+		DisplayName  string  `json:"display_name"`
 		PanelURL     string  `json:"panel_url"`
 		RemoteIP     string  `json:"remote_ip"`
 		PanelVersion string  `json:"panel_version"`
@@ -81,6 +84,9 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item{
 			ID:           a.ID,
 			Hostname:     a.Hostname,
+			Name:         a.Name,
+			Group:        a.Group,
+			DisplayName:  a.DisplayName(),
 			PanelURL:     a.PanelURL,
 			RemoteIP:     a.RemoteIP,
 			PanelVersion: a.PanelVersion,
@@ -273,11 +279,21 @@ tr:last-child td{border-bottom:0}
       <button class="btn plain" type="button" id="btnRotate" onclick="rotateToken()">轮换 Token</button>
     </div>
     <div class="card-bd">
+      <div class="meta-row" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+        <label style="display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1">
+          <span class="label" style="font-size:12px;color:var(--text-secondary)">节点名称</span>
+          <input id="nodeName" type="text" maxlength="64" placeholder="如：机房A-web1" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit;font:inherit">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1">
+          <span class="label" style="font-size:12px;color:var(--text-secondary)">节点分组</span>
+          <input id="nodeGroup" type="text" maxlength="64" placeholder="如：生产 / 测试" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:inherit;font:inherit">
+        </label>
+      </div>
       <div class="cmd">
         <code id="reg">{{.Register}}</code>
         <button class="btn" type="button" id="btnCopy" onclick="copyReg()">复制命令</button>
       </div>
-      <p class="meta">复制时会通过接口重新签发 HMAC（约 5 分钟有效）。脚本落盘 Master/Token，systemd 只跑 agent run。轮换 Token 后需重新安装。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
+      <p class="meta">填写名称/分组后复制：命令会写入安装脚本，Agent 上线后按分组显示。复制时重新签发 HMAC（约 5 分钟有效）。轮换 Token 后需重新安装。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
     </div>
   </div>
 
@@ -293,13 +309,12 @@ tr:last-child td{border-bottom:0}
         <thead>
           <tr>
             <th style="padding-left:18px">状态</th>
-            <th>主机名</th>
+            <th>名称</th>
             <th>IP</th>
             <th>Agent</th>
             <th>1Panel</th>
             <th>CPU</th>
             <th>内存</th>
-            <th>节点 ID</th>
             <th style="width:120px"></th>
           </tr>
         </thead>
@@ -307,13 +322,12 @@ tr:last-child td{border-bottom:0}
         {{range .Agents}}
           <tr data-agent-id="{{.ID}}">
             <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
-            <td>{{.Hostname}}</td>
+            <td>{{.DisplayName}}</td>
             <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
             <td>{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</td>
             <td>{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
             <td class="col-cpu">-</td>
             <td class="col-mem">-</td>
-            <td><code style="font-size:12px;color:var(--text-regular)">{{.ID}}</code></td>
             <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
           </tr>
         {{end}}
@@ -379,13 +393,21 @@ function fallbackCopy(text){
   document.body.removeChild(ta);
   return ok;
 }
+function installQuery(){
+  const name=(document.getElementById('nodeName')||{}).value||'';
+  const group=(document.getElementById('nodeGroup')||{}).value||'';
+  const q=[];
+  if(name.trim()) q.push('name='+encodeURIComponent(name.trim()));
+  if(group.trim()) q.push('group='+encodeURIComponent(group.trim()));
+  return q.length?('?'+q.join('&')):'';
+}
 function applyInstallCmd(data){
   if(!data || !data.install) throw new Error('empty command');
   document.getElementById('reg').textContent=data.install;
   return data.install;
 }
 function fetchInstallCmd(){
-  return fetch('/__mp/api/install-command',{credentials:'include'}).then(r=>{
+  return fetch('/__mp/api/install-command'+installQuery(),{credentials:'include'}).then(r=>{
     if(!r.ok) throw new Error('HTTP '+r.status);
     const ct=r.headers.get('content-type')||'';
     if(ct.indexOf('json')<0) throw new Error('接口返回非 JSON');
@@ -395,7 +417,7 @@ function fetchInstallCmd(){
 // 同步拉取：必须在 click 手势内完成，否则 HTTP 下剪贴板会被浏览器拒绝。
 function fetchInstallCmdSync(){
   const xhr=new XMLHttpRequest();
-  xhr.open('GET','/__mp/api/install-command',false);
+  xhr.open('GET','/__mp/api/install-command'+installQuery(),false);
   xhr.withCredentials=true;
   xhr.send(null);
   if(xhr.status!==200) throw new Error('HTTP '+xhr.status);
@@ -440,6 +462,13 @@ function rotateToken(){
     btn.disabled=false; btn.textContent='轮换 Token';
   });
 }
+function displayName(a){
+  return (a && (a.display_name||a.name||a.hostname||a.id)) || '-';
+}
+function groupLabel(a){
+  const g=(a && a.group)||'';
+  return g.trim()?g.trim():'未分组';
+}
 function renderAgents(list){
   const wrap=document.getElementById('agentsWrap');
   const online=document.getElementById('statOnline');
@@ -448,26 +477,36 @@ function renderAgents(list){
     wrap.innerHTML='<p class="empty" id="agentsEmpty">暂无在线 Agent，请先在子节点执行上方注册命令</p>';
     return;
   }
+  const sorted=list.slice().sort((x,y)=>{
+    const gx=groupLabel(x), gy=groupLabel(y);
+    if(gx!==gy) return gx.localeCompare(gy,'zh');
+    return displayName(x).localeCompare(displayName(y),'zh');
+  });
   let rows='';
-  list.forEach(a=>{
+  let lastGroup=null;
+  sorted.forEach(a=>{
+    const g=groupLabel(a);
+    if(g!==lastGroup){
+      lastGroup=g;
+      rows+='<tr class="group-row"><td colspan="8" style="padding:10px 18px;background:rgba(0,0,0,.03);font-weight:600;color:var(--text-regular)">'+esc(g)+'</td></tr>';
+    }
     const ip=a.remote_ip||'-';
     const av=a.agent_version||'-';
     const pv=a.panel_version||'-';
     const mem=(a.mem_total>0)?(fmtBytes(a.mem_used)+' / '+fmtBytes(a.mem_total)):'-';
     rows+='<tr data-agent-id="'+esc(a.id)+'">'+
       '<td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>'+
-      '<td>'+esc(a.hostname||'-')+'</td>'+
+      '<td>'+esc(displayName(a))+'</td>'+
       '<td style="color:var(--text-secondary)">'+esc(ip)+'</td>'+
       '<td>'+esc(av)+'</td>'+
       '<td>'+esc(pv)+'</td>'+
       '<td class="col-cpu">'+fmtCPU(a.cpu_percent)+'</td>'+
       '<td class="col-mem">'+mem+'</td>'+
-      '<td><code style="font-size:12px;color:var(--text-regular)">'+esc(a.id)+'</code></td>'+
       '<td><a class="btn primary-panel" href="/__mp/go/'+encodeURIComponent(a.id)+'">进入面板</a></td>'+
       '</tr>';
   });
   wrap.innerHTML='<table><thead><tr>'+
-    '<th style="padding-left:18px">状态</th><th>主机名</th><th>IP</th><th>Agent</th><th>1Panel</th><th>CPU</th><th>内存</th><th>节点 ID</th><th style="width:120px"></th>'+
+    '<th style="padding-left:18px">状态</th><th>名称</th><th>IP</th><th>Agent</th><th>1Panel</th><th>CPU</th><th>内存</th><th style="width:120px"></th>'+
     '</tr></thead><tbody id="agentsBody">'+rows+'</tbody></table>';
 }
 function esc(s){

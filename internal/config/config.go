@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
 
 // Agent 配置路径与默认值。
@@ -23,6 +25,8 @@ type Agent struct {
 	ID               string `json:"id"`
 	Master           string `json:"master"` // host:port
 	Token            string `json:"token"`
+	Name             string `json:"name,omitempty"`  // 展示名；空则用系统 hostname
+	Group            string `json:"group,omitempty"` // 分组；空则未分组
 	PanelURL         string `json:"panel_url,omitempty"`
 	PanelUser        string `json:"panel_user,omitempty"`
 	PanelEntrance    string `json:"panel_entrance,omitempty"` // 安全入口路径段，自动探测
@@ -144,4 +148,27 @@ func newID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// SanitizeMeta 清洗节点名称/分组：去控制字符，限制长度。
+func SanitizeMeta(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	out := strings.TrimSpace(b.String())
+	const max = 64
+	rs := []rune(out)
+	if len(rs) > max {
+		out = string(rs[:max])
+	}
+	return out
 }

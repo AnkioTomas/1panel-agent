@@ -11,6 +11,8 @@ import (
 type AgentInfo struct {
 	ID           string  `json:"id"`
 	Hostname     string  `json:"hostname"`
+	Name         string  `json:"name,omitempty"`
+	Group        string  `json:"group,omitempty"`
 	PanelURL     string  `json:"panel_url"`
 	RemoteIP     string  `json:"remote_ip"`
 	PanelVersion string  `json:"panel_version"`
@@ -19,6 +21,17 @@ type AgentInfo struct {
 	MemTotal     uint64  `json:"mem_total"`
 	MemUsed      uint64  `json:"mem_used"`
 	StatsAt      int64   `json:"stats_at,omitempty"` // unix 秒
+}
+
+// DisplayName 返回节点展示名：自定义 Name 优先，否则 Hostname，再否则 ID。
+func (a AgentInfo) DisplayName() string {
+	if a.Name != "" {
+		return a.Name
+	}
+	if a.Hostname != "" {
+		return a.Hostname
+	}
+	return a.ID
 }
 
 // Session 绑定一个在线 Agent 的信息与其 smux 会话。

@@ -183,13 +183,15 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	info := AgentInfo{
 		ID:           reg.ID,
 		Hostname:     reg.Hostname,
+		Name:         reg.Name,
+		Group:        reg.Group,
 		PanelURL:     reg.PanelURL,
 		RemoteIP:     remoteIP,
 		PanelVersion: reg.PanelVersion,
 		AgentVersion: reg.AgentVersion,
 	}
 	s.reg.Put(&Session{Info: info, Mux: session})
-	log.Printf("agent online: %s (%s) from %s agent=%s panel=%s", info.Hostname, info.ID, remoteIP, info.AgentVersion, info.PanelVersion)
+	log.Printf("agent online: %s (%s) group=%q from %s agent=%s panel=%s", info.DisplayName(), info.ID, info.Group, remoteIP, info.AgentVersion, info.PanelVersion)
 
 	<-session.CloseChan()
 	s.reg.Remove(info.ID, session)

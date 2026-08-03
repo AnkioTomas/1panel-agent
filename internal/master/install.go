@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -37,12 +38,16 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 		Base   string
 		Master string
 		Token  string
+		Name   string
+		Group  string
 		GOOS   string
 		GOARCH string
 	}{
 		Base:   "http://" + host,
 		Master: host,
 		Token:  s.currentToken(),
+		Name:   config.SanitizeMeta(r.URL.Query().Get("name")),
+		Group:  config.SanitizeMeta(r.URL.Query().Get("group")),
 		GOOS:   runtime.GOOS,
 		GOARCH: runtime.GOARCH,
 	}
@@ -84,11 +89,21 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 }
 
 // InstallCommand 返回管理页展示的一键安装命令（timestamp+sign，约 5 分钟有效）。
+// name/group 来自请求 query，写入 agent.sh URL，安装时落盘并随注册上报。
 func (s *Server) InstallCommand(r *http.Request) string {
 	host := s.AdvertiseHost(r)
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sign := config.Sign(s.currentToken(), ts)
-	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?timestamp=%s&sign=%s" | sudo bash`, host, ts, sign)
+	q := url.Values{}
+	q.Set("timestamp", ts)
+	q.Set("sign", sign)
+	if name := config.SanitizeMeta(r.URL.Query().Get("name")); name != "" {
+		q.Set("name", name)
+	}
+	if group := config.SanitizeMeta(r.URL.Query().Get("group")); group != "" {
+		q.Set("group", group)
+	}
+	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?%s" | sudo bash`, host, q.Encode())
 }
 
 // handleInstallCommand 实时生成带签名的安装命令（复制前调用，避免签名过期）。
@@ -113,6 +128,8 @@ set -euo pipefail
 MASTER={{printf "%q" .Master}}
 TOKEN={{printf "%q" .Token}}
 BASE={{printf "%q" .Base}}
+NODE_NAME={{printf "%q" .Name}}
+NODE_GROUP={{printf "%q" .Group}}
 EXPECT_GOOS={{printf "%q" .GOOS}}
 EXPECT_GOARCH={{printf "%q" .GOARCH}}
 BIN_PATH=/usr/local/bin/1pm
@@ -213,7 +230,7 @@ systemctl stop 1pm-agent.service 2>/dev/null || true
 install -m 755 "$TMP" "$BIN_PATH"
 
 log "写入配置 ${MASTER}"
-"$BIN_PATH" agent install "$MASTER" "$TOKEN" >/dev/null
+"$BIN_PATH" agent install "$MASTER" "$TOKEN" --name "$NODE_NAME" --group "$NODE_GROUP" >/dev/null
 
 save_panel_password
 

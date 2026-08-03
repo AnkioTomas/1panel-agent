@@ -100,6 +100,8 @@ func (c *Client) connectOnce() error {
 	reg := protocol.Register{
 		ID:           c.Cfg.ID,
 		Hostname:     hostname,
+		Name:         c.Cfg.Name,
+		Group:        c.Cfg.Group,
 		PanelURL:     c.Cfg.PanelURL,
 		PanelVersion: panel.ReadSystemVersion(),
 		AgentVersion: buildinfo.Version,

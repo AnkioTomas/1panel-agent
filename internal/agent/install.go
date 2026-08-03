@@ -31,9 +31,15 @@ func ParseInstallTarget(s string) (master, token string, err error) {
 	return master, token, nil
 }
 
+// InstallOpts 是安装时可选的节点展示元数据。
+type InstallOpts struct {
+	Name  string
+	Group string
+}
+
 // Install 在安装时写入 Master/Token，并自动探测本机 1Panel 地址与用户名。
 // 不启动长连接；运行时由 systemd 执行 "agent run"。
-func Install(master, token string) error {
+func Install(master, token string, opts InstallOpts) error {
 	if err := role.RefuseAgentIfMaster(); err != nil {
 		return err
 	}
@@ -52,14 +58,16 @@ func Install(master, token string) error {
 	AutofillPanel(cfg)
 	cfg.Master = master
 	cfg.Token = token
+	cfg.Name = config.SanitizeMeta(opts.Name)
+	cfg.Group = config.SanitizeMeta(opts.Group)
 	return config.Save(cfg)
 }
 
 // InstallFromTarget 解析 host:port/token 并 Install。
-func InstallFromTarget(target string) error {
+func InstallFromTarget(target string, opts InstallOpts) error {
 	master, token, err := ParseInstallTarget(target)
 	if err != nil {
 		return err
 	}
-	return Install(master, token)
+	return Install(master, token, opts)
 }

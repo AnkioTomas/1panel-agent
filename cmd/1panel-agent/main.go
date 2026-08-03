@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"1panel-agent/internal/agent"
 	"1panel-agent/internal/buildinfo"
@@ -134,13 +135,42 @@ func removeSelfBin() {
 
 // runAgentInstall 安装时写入 Master/Token（不启动长连接）。
 func runAgentInstall(args []string) error {
-	switch len(args) {
+	var positional []string
+	opts := agent.InstallOpts{}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--name":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--name needs a value")
+			}
+			opts.Name = args[i]
+		case "--group":
+			i++
+			if i >= len(args) {
+				return fmt.Errorf("--group needs a value")
+			}
+			opts.Group = args[i]
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return fmt.Errorf("unknown install flag: %s", args[i])
+			}
+			positional = append(positional, args[i])
+		}
+	}
+	if opts.Name == "" {
+		opts.Name = os.Getenv("NODE_NAME")
+	}
+	if opts.Group == "" {
+		opts.Group = os.Getenv("NODE_GROUP")
+	}
+	switch len(positional) {
 	case 1:
-		return agent.InstallFromTarget(args[0])
+		return agent.InstallFromTarget(positional[0], opts)
 	case 2:
-		return agent.Install(args[0], args[1])
+		return agent.Install(positional[0], positional[1], opts)
 	default:
-		return fmt.Errorf("usage: agent install <host:port> <token> | agent install host:port/token")
+		return fmt.Errorf("usage: agent install <host:port> <token> [--name NAME] [--group GROUP]")
 	}
 }
 
@@ -191,7 +221,7 @@ Usage:
   1pm master uninstall                uninstall master only
   1pm agent uninstall                 uninstall agent only
 
-  1pm agent install <host:port> <token>
+  1pm agent install <host:port> <token> [--name NAME] [--group GROUP]
                                       write config at install time (panel URL/user auto-detected)
   1pm agent run                       start agent with saved config
   1pm agent setpwd [--password PASS]  set 1Panel password (encrypted at rest)

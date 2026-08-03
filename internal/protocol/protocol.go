@@ -28,6 +28,8 @@ const (
 type Register struct {
 	ID           string `json:"id"`
 	Hostname     string `json:"hostname"`
+	Name         string `json:"name,omitempty"`
+	Group        string `json:"group,omitempty"`
 	PanelURL     string `json:"panel_url"`
 	PanelVersion string `json:"panel_version,omitempty"`
 	AgentVersion string `json:"agent_version,omitempty"`

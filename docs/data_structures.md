@@ -38,6 +38,8 @@ Master **不存储**面板密码。
 type Register struct {
     ID           string
     Hostname     string
+    Name         string // 展示名，可选
+    Group        string // 分组，可选
     PanelURL     string
     PanelVersion string // 1panel -l en version
     AgentVersion string // buildinfo.Version
@@ -78,11 +80,11 @@ type ResponseMeta struct {
 
 ```go
 type AgentInfo struct {
-    ID, Hostname, PanelURL, RemoteIP string
-    PanelVersion, AgentVersion       string
-    CPUPercent                       float64
-    MemTotal, MemUsed                uint64
-    StatsAt                          int64 // unix 秒
+    ID, Hostname, Name, Group, PanelURL, RemoteIP string
+    PanelVersion, AgentVersion                    string
+    CPUPercent                                    float64
+    MemTotal, MemUsed                             uint64
+    StatsAt                                       int64 // unix 秒
 }
 
 type Session struct {

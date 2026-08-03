@@ -51,6 +51,7 @@ function ensureStyle(){
     "#mp-node-pop .mp-ns-item.is-active{color:var(--el-color-primary,#409EFF);font-weight:600;}"+
     "#mp-node-pop .mp-ns-item .mp-ns-sub{font-size:12px;opacity:.55;font-weight:400;}"+
     "#mp-node-pop .mp-ns-sep{height:1px;margin:6px 0;background:var(--el-border-color-lighter,#ebeef5);}"+
+    "#mp-node-pop .mp-ns-group{padding:6px 14px 2px;font-size:11px;opacity:.55;font-weight:600;letter-spacing:.02em;}"+
     "#mp-node-pop .mp-ns-empty{padding:10px 14px;font-size:12px;opacity:.6;}";
   document.head.appendChild(st);
 }
@@ -77,13 +78,20 @@ function findCollapseRoot(trigger){
   return trigger.parentNode;
 }
 
+function agentTitle(a){
+  return (a && (a.display_name||a.name||a.hostname||a.id)) || "-";
+}
+function agentGroup(a){
+  var g=(a && a.group)||"";
+  return g ? g : "未分组";
+}
 function labelParts(agents){
   var id=currentID();
   if(!id) return {title:"主节点", ip:(MASTER_IP && MASTER_IP!=="-") ? MASTER_IP : ""};
   for(var i=0;i<(agents||[]).length;i++){
     if(agents[i].id===id){
       var a=agents[i];
-      return {title:(a.hostname||a.id), ip:(a.remote_ip||"")};
+      return {title:agentTitle(a), ip:(a.remote_ip||"")};
     }
   }
   return {title:id.slice(0,8), ip:""};
@@ -118,10 +126,22 @@ function renderPop(btn, agents){
   if(!agents || !agents.length){
     html+='<div class="mp-ns-empty">暂无在线 Agent</div>';
   } else {
-    for(var i=0;i<agents.length;i++){
-      var a=agents[i];
+    var sorted=agents.slice().sort(function(x,y){
+      var gx=agentGroup(x), gy=agentGroup(y);
+      if(gx!==gy) return gx<gy?-1:gx>gy?1:0;
+      var tx=agentTitle(x), ty=agentTitle(y);
+      return tx<ty?-1:tx>ty?1:0;
+    });
+    var last="";
+    for(var i=0;i<sorted.length;i++){
+      var a=sorted[i];
+      var g=agentGroup(a);
+      if(g!==last){
+        last=g;
+        html+='<div class="mp-ns-group">'+g+"</div>";
+      }
       var active=id===a.id?" is-active":"";
-      var title=(a.hostname||a.id);
+      var title=agentTitle(a);
       var sub=a.remote_ip||"";
       html+='<div class="mp-ns-item'+active+'" data-mp="go" data-id="'+a.id+'"><span>'+title+"</span>"+(sub?'<span class="mp-ns-sub">'+sub+"</span>":"")+"</div>";
     }
