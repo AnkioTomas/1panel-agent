@@ -18,8 +18,10 @@ const (
 	StreamTypeHTTP byte = 1
 	// StreamTypeWS 表示 WebSocket 隧道流。
 	StreamTypeWS byte = 2
-	maxJSONFrame      = 16 << 20
-	maxChunk          = 8 << 20
+	// StreamTypeStats 表示 Master 拉取 Agent 主机状态（CPU/内存/版本）。
+	StreamTypeStats byte = 3
+	maxJSONFrame         = 16 << 20
+	maxChunk             = 8 << 20
 )
 
 // Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。
@@ -28,6 +30,18 @@ type Register struct {
 	Hostname     string `json:"hostname"`
 	PanelURL     string `json:"panel_url"`
 	PanelVersion string `json:"panel_version,omitempty"`
+	AgentVersion string `json:"agent_version,omitempty"`
+}
+
+// HostStats 是 Agent 上报的主机状态快照。
+type HostStats struct {
+	CPUPercent   float64 `json:"cpu_percent"`
+	MemTotal     uint64  `json:"mem_total"`
+	MemUsed      uint64  `json:"mem_used"`
+	AgentVersion string  `json:"agent_version,omitempty"`
+	PanelVersion string  `json:"panel_version,omitempty"`
+	GOOS         string  `json:"goos,omitempty"`
+	GOARCH       string  `json:"goarch,omitempty"`
 }
 
 // RegisterOK 是 Master 在 smux 接管前的注册应答。

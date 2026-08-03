@@ -3,9 +3,11 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/panel"
 	"1panel-agent/internal/protocol"
@@ -95,6 +98,7 @@ func (c *Client) connectOnce() error {
 		Hostname:     hostname,
 		PanelURL:     c.Cfg.PanelURL,
 		PanelVersion: panel.ReadSystemVersion(),
+		AgentVersion: buildinfo.Version,
 	}
 	if err := protocol.WriteJSON(netConn, reg); err != nil {
 		return fmt.Errorf("register write: %w", err)
@@ -138,9 +142,32 @@ func (c *Client) handleStream(stream *smux.Stream) {
 	switch meta.Type {
 	case protocol.StreamTypeWS:
 		c.handleWS(stream, meta, body)
+	case protocol.StreamTypeStats:
+		c.handleStats(stream, body)
 	default:
 		c.handleHTTP(stream, meta, body)
 	}
+}
+
+// handleStats 响应 Master 的主机状态查询。
+func (c *Client) handleStats(stream *smux.Stream, body io.Reader) {
+	_, _ = io.Copy(io.Discard, body)
+	st := collectHostStats()
+	raw, err := json.Marshal(st)
+	if err != nil {
+		c.writeErr(stream, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respMeta := &protocol.ResponseMeta{
+		Status: http.StatusOK,
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	}
+	if err := protocol.WriteJSON(stream, respMeta); err != nil {
+		return
+	}
+	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
 }
 
 // getSessionCookies 在配置了加密密码时登录本机 1Panel，返回会话 Cookie（带短缓存）。

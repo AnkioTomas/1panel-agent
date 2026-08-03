@@ -5,14 +5,12 @@ import (
 	"os"
 
 	"1panel-agent/internal/agent"
+	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/master"
 
 	"golang.org/x/term"
 )
-
-// Set by release builds: -ldflags "-X main.version=v1.2.3"
-var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -38,7 +36,7 @@ func main() {
 			fatal(err)
 		}
 	case "version", "-v", "--version":
-		fmt.Println(version)
+		fmt.Println(buildinfo.Version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -151,7 +149,7 @@ Usage:
 
 Master UI: http://<master>:<panel-port>/__mp/
   Agent download / WS auth = HMAC timestamp+sign (not raw token query).
-`, version)
+`, buildinfo.Version)
 }
 
 // fatal 打印错误信息并退出程序。

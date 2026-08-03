@@ -2,17 +2,23 @@ package master
 
 import (
 	"sync"
+	"time"
 
 	"github.com/xtaci/smux"
 )
 
 // AgentInfo 是在线 Agent 的展示元数据（不含隧道句柄）。
 type AgentInfo struct {
-	ID           string
-	Hostname     string
-	PanelURL     string
-	RemoteIP     string
-	PanelVersion string
+	ID           string  `json:"id"`
+	Hostname     string  `json:"hostname"`
+	PanelURL     string  `json:"panel_url"`
+	RemoteIP     string  `json:"remote_ip"`
+	PanelVersion string  `json:"panel_version"`
+	AgentVersion string  `json:"agent_version"`
+	CPUPercent   float64 `json:"cpu_percent"`
+	MemTotal     uint64  `json:"mem_total"`
+	MemUsed      uint64  `json:"mem_used"`
+	StatsAt      int64   `json:"stats_at,omitempty"` // unix 秒
 }
 
 // Session 绑定一个在线 Agent 的信息与其 smux 会话。
@@ -82,4 +88,24 @@ func (r *Registry) List() []AgentInfo {
 		out = append(out, s.Info)
 	}
 	return out
+}
+
+// UpdateStats 更新指定 Agent 的资源与版本快照。
+func (r *Registry) UpdateStats(id string, cpu float64, memTotal, memUsed uint64, agentVer, panelVer string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.byID[id]
+	if !ok {
+		return
+	}
+	s.Info.CPUPercent = cpu
+	s.Info.MemTotal = memTotal
+	s.Info.MemUsed = memUsed
+	if agentVer != "" {
+		s.Info.AgentVersion = agentVer
+	}
+	if panelVer != "" {
+		s.Info.PanelVersion = panelVer
+	}
+	s.Info.StatsAt = time.Now().Unix()
 }

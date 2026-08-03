@@ -29,8 +29,8 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	case "/api/agents":
 		s.apiAgents(w, r)
 		return
-	case "/api/upgrade-check":
-		s.handleUpgradeCheck(w, r)
+	case "/api/install-command":
+		s.handleInstallCommand(w, r)
 		return
 	case "/api/rotate-token":
 		s.handleRotateToken(w, r)
@@ -54,15 +54,24 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// apiAgents 返回在线 Agent JSON 列表（含 OpenURL）。
+// apiAgents 拉取各 Agent 最新资源快照后返回在线列表。
 func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.refreshAgentStats()
 	type item struct {
-		ID           string `json:"id"`
-		Hostname     string `json:"hostname"`
-		PanelURL     string `json:"panel_url"`
-		RemoteIP     string `json:"remote_ip"`
-		PanelVersion string `json:"panel_version"`
-		OpenURL      string `json:"open_url"`
+		ID           string  `json:"id"`
+		Hostname     string  `json:"hostname"`
+		PanelURL     string  `json:"panel_url"`
+		RemoteIP     string  `json:"remote_ip"`
+		PanelVersion string  `json:"panel_version"`
+		AgentVersion string  `json:"agent_version"`
+		CPUPercent   float64 `json:"cpu_percent"`
+		MemTotal     uint64  `json:"mem_total"`
+		MemUsed      uint64  `json:"mem_used"`
+		OpenURL      string  `json:"open_url"`
 	}
 	list := s.reg.List()
 	out := make([]item, 0, len(list))
@@ -73,6 +82,10 @@ func (s *Server) apiAgents(w http.ResponseWriter, r *http.Request) {
 			PanelURL:     a.PanelURL,
 			RemoteIP:     a.RemoteIP,
 			PanelVersion: a.PanelVersion,
+			AgentVersion: a.AgentVersion,
+			CPUPercent:   a.CPUPercent,
+			MemTotal:     a.MemTotal,
+			MemUsed:      a.MemUsed,
 			OpenURL:      "/__mp/go/" + a.ID,
 		})
 	}
@@ -196,6 +209,7 @@ body{
 .btn.plain:hover{color:var(--el-color-primary);border-color:var(--el-color-primary-light-5,#a0cfff);background:#ecf5ff}
 .btn.primary-panel{background:var(--panel-primary)}
 .btn.primary-panel:hover{background:#0052cc}
+.btn:disabled{opacity:.6;cursor:not-allowed}
 .meta{margin:10px 0 0;color:var(--text-secondary);font-size:12px}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
@@ -214,6 +228,7 @@ tr:last-child td{border-bottom:0}
   opacity:0;transform:translateY(8px);transition:.2s;font-size:13px;z-index:99;
 }
 .toast.show{opacity:1;transform:translateY(0)}
+.toast.err{background:#fef0f0;color:#f56c6c;border-color:#fde2e2}
 @media (max-width:800px){
   .stats{grid-template-columns:1fr}
   .cmd{flex-direction:column}
@@ -238,7 +253,7 @@ tr:last-child td{border-bottom:0}
   <div class="stats">
     <div class="stat">
       <div class="label">在线 Agent</div>
-      <div class="value">{{.Online}}</div>
+      <div class="value" id="statOnline">{{.Online}}</div>
     </div>
     <div class="stat">
       <div class="label">注册地址</div>
@@ -258,21 +273,19 @@ tr:last-child td{border-bottom:0}
     <div class="card-bd">
       <div class="cmd">
         <code id="reg">{{.Register}}</code>
-        <button class="btn" type="button" onclick="copyReg()">复制命令</button>
+        <button class="btn" type="button" id="btnCopy" onclick="copyReg()">复制命令</button>
       </div>
-      <p class="meta">安装命令使用 HMAC 签名（约 5 分钟有效）；脚本内落盘 Master/Token，systemd 只跑 agent run。轮换 Token 后需重新安装。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
+      <p class="meta">复制时会通过接口重新签发 HMAC（约 5 分钟有效）。脚本落盘 Master/Token，systemd 只跑 agent run。轮换 Token 后需重新安装。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
     </div>
   </div>
 
   <div class="card">
     <div class="card-hd">
       <h2>在线节点</h2>
-      <div style="display:flex;gap:8px">
-        <button class="btn plain" type="button" id="btnCheckUpgrade" onclick="checkUpgrade()">检查更新</button>
-        <button class="btn plain" type="button" onclick="location.reload()">刷新</button>
-      </div>
+      <button class="btn plain" type="button" onclick="refreshAgents()">刷新</button>
     </div>
     <div class="card-bd" style="padding:0">
+      <div id="agentsWrap">
       {{if .Agents}}
       <table>
         <thead>
@@ -280,20 +293,24 @@ tr:last-child td{border-bottom:0}
             <th style="padding-left:18px">状态</th>
             <th>主机名</th>
             <th>IP</th>
-            <th>版本</th>
-            <th>更新</th>
+            <th>Agent</th>
+            <th>1Panel</th>
+            <th>CPU</th>
+            <th>内存</th>
             <th>节点 ID</th>
             <th style="width:120px"></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="agentsBody">
         {{range .Agents}}
           <tr data-agent-id="{{.ID}}">
             <td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>
             <td>{{.Hostname}}</td>
             <td style="color:var(--text-secondary)">{{if .RemoteIP}}{{.RemoteIP}}{{else}}-{{end}}</td>
-            <td class="col-ver">{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
-            <td class="col-upd" style="color:var(--text-secondary)">-</td>
+            <td>{{if .AgentVersion}}{{.AgentVersion}}{{else}}-{{end}}</td>
+            <td>{{if .PanelVersion}}{{.PanelVersion}}{{else}}-{{end}}</td>
+            <td class="col-cpu">-</td>
+            <td class="col-mem">-</td>
             <td><code style="font-size:12px;color:var(--text-regular)">{{.ID}}</code></td>
             <td><a class="btn primary-panel" href="/__mp/go/{{.ID}}">进入面板</a></td>
           </tr>
@@ -301,9 +318,9 @@ tr:last-child td{border-bottom:0}
         </tbody>
       </table>
       {{else}}
-      <p class="empty">暂无在线 Agent，请先在子节点执行上方注册命令</p>
+      <p class="empty" id="agentsEmpty">暂无在线 Agent，请先在子节点执行上方注册命令</p>
       {{end}}
-      <p class="meta" id="upgradeMsg" style="padding:12px 18px;margin:0;display:none"></p>
+      </div>
     </div>
   </div>
 
@@ -312,8 +329,7 @@ tr:last-child td{border-bottom:0}
     <div class="card-bd">
       <p class="meta" style="margin:0 0 14px">
         上游 {{.LocalPanel}}
-        · 版本 <strong id="masterVer">{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
-        · 更新 <strong id="masterUpd" style="font-weight:500;color:var(--text-secondary)">-</strong>
+        · 版本 <strong>{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
       </p>
       <p class="meta" style="margin:0 0 14px">切换远程节点不会覆盖主节点登录态。</p>
       <div class="actions">
@@ -327,12 +343,41 @@ tr:last-child td{border-bottom:0}
 
 <div class="toast" id="toast">复制成功</div>
 <script>
+function showToast(text, err){
+  const el=document.getElementById('toast');
+  el.textContent=text;
+  el.classList.toggle('err', !!err);
+  el.classList.add('show');
+  setTimeout(()=>{el.classList.remove('show'); el.classList.remove('err');},1500);
+}
+function fmtBytes(n){
+  n=Number(n)||0;
+  if(n<=0) return '-';
+  const u=['B','KB','MB','GB','TB'];
+  let i=0;
+  while(n>=1024 && i<u.length-1){n/=1024;i++;}
+  return (i===0?n:n.toFixed(1))+u[i];
+}
+function fmtCPU(v){
+  if(v==null || isNaN(v)) return '-';
+  return Number(v).toFixed(1)+'%';
+}
 function copyReg(){
-  const t=document.getElementById('reg').innerText;
-  navigator.clipboard.writeText(t).then(()=>{
-    const el=document.getElementById('toast');
-    el.classList.add('show');
-    setTimeout(()=>el.classList.remove('show'),1200);
+  const btn=document.getElementById('btnCopy');
+  btn.disabled=true;
+  fetch('/__mp/api/install-command',{credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(data=>{
+    if(!data.install) throw new Error('empty command');
+    document.getElementById('reg').textContent=data.install;
+    return navigator.clipboard.writeText(data.install);
+  }).then(()=>{
+    showToast('复制成功');
+  }).catch(e=>{
+    showToast('复制失败: '+e.message, true);
+  }).finally(()=>{
+    btn.disabled=false;
   });
 }
 function rotateToken(){
@@ -344,58 +389,56 @@ function rotateToken(){
     return r.json();
   }).then(data=>{
     if(data.install) document.getElementById('reg').textContent=data.install;
-    const el=document.getElementById('toast');
-    el.textContent='Token 已轮换';
-    el.classList.add('show');
-    setTimeout(()=>{el.classList.remove('show'); el.textContent='复制成功';},1500);
+    showToast('Token 已轮换');
   }).catch(e=>{
     alert('轮换失败: '+e.message);
   }).finally(()=>{
     btn.disabled=false; btn.textContent='轮换 Token';
   });
 }
-function updText(status, latest){
-  if(status==='outdated') return '有更新 '+(latest||'');
-  if(status==='latest') return '已是最新';
-  return '-';
+function renderAgents(list){
+  const wrap=document.getElementById('agentsWrap');
+  const online=document.getElementById('statOnline');
+  if(online) online.textContent=String(list.length);
+  if(!list.length){
+    wrap.innerHTML='<p class="empty" id="agentsEmpty">暂无在线 Agent，请先在子节点执行上方注册命令</p>';
+    return;
+  }
+  let rows='';
+  list.forEach(a=>{
+    const ip=a.remote_ip||'-';
+    const av=a.agent_version||'-';
+    const pv=a.panel_version||'-';
+    const mem=(a.mem_total>0)?(fmtBytes(a.mem_used)+' / '+fmtBytes(a.mem_total)):'-';
+    rows+='<tr data-agent-id="'+esc(a.id)+'">'+
+      '<td style="padding-left:18px"><span class="tag"><span class="dot"></span>在线</span></td>'+
+      '<td>'+esc(a.hostname||'-')+'</td>'+
+      '<td style="color:var(--text-secondary)">'+esc(ip)+'</td>'+
+      '<td>'+esc(av)+'</td>'+
+      '<td>'+esc(pv)+'</td>'+
+      '<td class="col-cpu">'+fmtCPU(a.cpu_percent)+'</td>'+
+      '<td class="col-mem">'+mem+'</td>'+
+      '<td><code style="font-size:12px;color:var(--text-regular)">'+esc(a.id)+'</code></td>'+
+      '<td><a class="btn primary-panel" href="/__mp/go/'+encodeURIComponent(a.id)+'">进入面板</a></td>'+
+      '</tr>';
+  });
+  wrap.innerHTML='<table><thead><tr>'+
+    '<th style="padding-left:18px">状态</th><th>主机名</th><th>IP</th><th>Agent</th><th>1Panel</th><th>CPU</th><th>内存</th><th>节点 ID</th><th style="width:120px"></th>'+
+    '</tr></thead><tbody id="agentsBody">'+rows+'</tbody></table>';
 }
-function checkUpgrade(){
-  const btn=document.getElementById('btnCheckUpgrade');
-  const msg=document.getElementById('upgradeMsg');
-  btn.disabled=true; btn.textContent='检查中…';
-  fetch('/__mp/api/upgrade-check',{credentials:'include'}).then(r=>{
+function esc(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function refreshAgents(){
+  return fetch('/__mp/api/agents',{credentials:'include'}).then(r=>{
     if(!r.ok) throw new Error('HTTP '+r.status);
     return r.json();
-  }).then(data=>{
-    const mv=document.getElementById('masterVer');
-    const mu=document.getElementById('masterUpd');
-    if(data.master_version && mv) mv.textContent=data.master_version;
-    if(mu){
-      mu.textContent=updText(data.master_status, data.latest);
-      mu.style.color=data.master_status==='outdated'?'#e6a23c':(data.master_status==='latest'?'#67c23a':'');
-    }
-    (data.agents||[]).forEach(a=>{
-      const tr=document.querySelector('tr[data-agent-id="'+a.id+'"]');
-      if(!tr) return;
-      const ver=tr.querySelector('.col-ver');
-      const upd=tr.querySelector('.col-upd');
-      if(ver && a.version) ver.textContent=a.version;
-      if(upd){
-        upd.textContent=updText(a.status, a.latest||data.latest);
-        upd.style.color=a.status==='outdated'?'#e6a23c':(a.status==='latest'?'#67c23a':'');
-      }
-    });
-    if(msg){
-      if(data.message){ msg.style.display='block'; msg.textContent='检查备注：'+data.message; }
-      else if(data.latest){ msg.style.display='block'; msg.textContent='可用版本：'+data.latest; }
-      else { msg.style.display='block'; msg.textContent='未发现可用新版本'; }
-    }
-  }).catch(e=>{
-    if(msg){ msg.style.display='block'; msg.textContent='检查失败：'+e.message; }
-  }).finally(()=>{
-    btn.disabled=false; btn.textContent='检查更新';
-  });
+  }).then(list=>{
+    renderAgents(Array.isArray(list)?list:[]);
+  }).catch(()=>{});
 }
+refreshAgents();
+setInterval(refreshAgents, 5000);
 </script>
 </body>
 </html>`))

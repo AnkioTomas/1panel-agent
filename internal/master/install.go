@@ -1,6 +1,7 @@
 package master
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -88,6 +89,18 @@ func (s *Server) InstallCommand(r *http.Request) string {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sign := config.Sign(s.currentToken(), ts)
 	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?timestamp=%s&sign=%s" | sudo bash`, host, ts, sign)
+}
+
+// handleInstallCommand 实时生成带签名的安装命令（复制前调用，避免签名过期）。
+func (s *Server) handleInstallCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"install": s.InstallCommand(r),
+	})
 }
 
 // agentInstallTmpl 是 /agent.sh 安装脚本模板。

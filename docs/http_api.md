@@ -57,31 +57,26 @@ Agent WebSocket 接入点。
     "panel_url": "http://127.0.0.1:152045",
     "remote_ip": "10.211.55.15",
     "panel_version": "v2.4.1",
+    "agent_version": "v0.1.0",
+    "cpu_percent": 12.5,
+    "mem_total": 8589934592,
+    "mem_used": 2147483648,
     "open_url": "/__mp/go/a1b2c3d4e5f6a7b8"
   }
 ]
 ```
 
-### GET /__mp/api/upgrade-check
+管理页打开时每 5 秒轮询本接口；Master 经隧道向 Agent 拉取 CPU/内存/版本后再返回。
 
-检查 Master 和所有 Agent 的 1Panel 版本是否有可用更新。
+### GET /__mp/api/install-command
+
+实时签发带 HMAC 的一键安装命令（约 5 分钟有效）。管理页「复制命令」会先调本接口再写入剪贴板。
 
 ```json
 {
-  "master_version": "v2.4.0",
-  "latest": "v2.4.1",
-  "master_status": "outdated",
-  "agents": [
-    {
-      "id": "a1b2c3d4e5f6a7b8",
-      "version": "v2.4.1",
-      "status": "latest"
-    }
-  ]
+  "install": "curl -fsSL \"http://10.0.0.1/agent.sh?timestamp=...&sign=...\" | sudo bash"
 }
 ```
-
-`status` 取值：`latest` | `outdated` | `unknown`
 
 ### POST /__mp/api/rotate-token
 

@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          ldflags="-s -w -X main.version=${VERSION}"
+          ldflags="-s -w -X 1panel-agent/internal/buildinfo.Version=${VERSION}"
           targets=(
             "linux amd64"
             "linux arm64"
