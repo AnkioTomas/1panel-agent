@@ -401,9 +401,10 @@ tr:last-child td{border-bottom:0}
       <div class="actions">
         <a class="btn primary-panel" href="/__mp/local">切换回主节点 1Panel</a>
         <button class="btn plain" type="button" id="btnUpdateMaster" onclick="updateMaster()">更新主节点</button>
-        <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点</button>
+        <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点 1pm</button>
+        <button class="btn plain" type="button" id="btnUpgradePanel" onclick="upgradePanel()">更新子节点 1Panel</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">先「更新主节点」（从 Release 拉最新 1pm 并重启 master），再「强制更新子节点」（子节点从本机 /agent.bin 拉取并重启）。</p>
+      <p class="meta" style="margin:14px 0 0">1pm：先「更新主节点」再「强制更新子节点 1pm」。1Panel：Agent 自动登录后调用官方升级 API（已最新则跳过）。</p>
     </div>
   </div>
 </div>
@@ -550,7 +551,33 @@ function forceUpdate(){
   }).catch(e=>{
     alert('强制更新失败: '+(e&&e.message?e.message:e));
   }).finally(()=>{
-    btn.disabled=false; btn.textContent='强制更新子节点';
+    btn.disabled=false; btn.textContent='强制更新子节点 1pm';
+  });
+}
+function upgradePanel(){
+  if(!confirm('将让所有在线子节点登录本机 1Panel 并触发官方升级（已最新则跳过）。继续？')) return;
+  const btn=document.getElementById('btnUpgradePanel');
+  btn.disabled=true; btn.textContent='升级中…';
+  fetch('/__mp/api/upgrade-panel',{method:'POST',credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(data=>{
+    const total=data.total||0, ok=data.ok||0;
+    const lines=(data.results||[]).map(x=>{
+      if(!x.ok) return (x.name||x.id)+': '+(x.error||'fail');
+      if(x.skipped) return (x.name||x.id)+': 已是最新';
+      return (x.name||x.id)+': → '+(x.target_version||x.message||'ok');
+    });
+    if((data.results||[]).some(x=>!x.ok)){
+      alert('完成 '+ok+'/'+total+'\n'+lines.join('\n'));
+    }else{
+      showToast('1Panel 升级完成 '+ok+'/'+total);
+    }
+    setTimeout(refreshAgents, 5000);
+  }).catch(e=>{
+    alert('更新子节点 1Panel 失败: '+(e&&e.message?e.message:e));
+  }).finally(()=>{
+    btn.disabled=false; btn.textContent='更新子节点 1Panel';
   });
 }
 function displayName(a){

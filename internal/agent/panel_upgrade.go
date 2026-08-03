@@ -53,7 +53,6 @@ func (c *Client) handlePanelUpgrade(stream *smux.Stream, body io.Reader) {
 type panelUpgradeResult struct {
 	OK            bool   `json:"ok"`
 	Skipped       bool   `json:"skipped,omitempty"`
-	CurrentHint   string `json:"current_hint,omitempty"`
 	TargetVersion string `json:"target_version,omitempty"`
 	Message       string `json:"message,omitempty"`
 }
@@ -186,4 +185,11 @@ func setCookieHeader(req *http.Request, cookies []*http.Cookie) {
 	if len(parts) > 0 {
 		req.Header.Set("Cookie", strings.Join(parts, "; "))
 	}
+}
+
+func truncateRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

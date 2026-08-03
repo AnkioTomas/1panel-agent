@@ -105,6 +105,24 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 }
 ```
 
+### POST /__mp/api/upgrade-panel
+
+通知所有在线 Agent：用本机已保存的面板账号**自动登录**后，调用 1Panel 官方 UI API：
+
+1. `GET /api/v2/core/settings/upgrade` 查可升级版本  
+2. 有 `newVersion` / `latestVersion` / `testVersion` 则 `POST` 同路径 `{"version":"…"}`  
+3. 全空则视为已最新，`skipped: true`
+
+可选 JSON body：`{"version":"v2.x.x"}` 强制指定版本。
+
+```json
+{
+  "total": 1,
+  "ok": 1,
+  "results": [{"id":"…","name":"机房A-web1","ok":true,"skipped":true,"message":"already up to date"}]
+}
+```
+
 ### GET /__mp/go/{id}
 
 Agent 须在线；写 `mp_node` 后 302 到安全入口。自动登录发生在后续隧道请求的 **Agent 侧**。

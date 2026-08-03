@@ -51,8 +51,8 @@ HMAC 约 5 分钟有效。管理页「复制命令」同步请求 `/__mp/api/ins
 
 Takeover 与 Agent 代理会争同一面板端口与职责。安装脚本与 `role` 包按 unit/状态文件互斥；`1pm uninstall` 按检测结果自动卸。
 
-## 10. 不做官方式「检查更新」
+## 10. 1pm / 1Panel 更新分工
 
-社区场景不需要再包一层 1Panel upgrade API。管理页只展示 Agent / 1Panel **当前版本**（注册 + Stats 上报）。
-
-1pm 自身更新另走通路：主节点 `POST /__mp/api/update-master` 从 Release 拉二进制；子节点 `POST /__mp/api/force-update` 从主节点 `/agent.bin` 同步。这与 1Panel 官方升级无关。
+- **不**再包一层「检查 1Panel 更新」展示；列表只报当前版本。  
+- 1pm：主节点 `update-master`（Release），子节点 `force-update`（吃主节点 `/agent.bin`）。  
+- 1Panel：`upgrade-panel` 让 Agent **登录后**调官方 `/api/v2/core/settings/upgrade`（与面板 UI 同源）。
