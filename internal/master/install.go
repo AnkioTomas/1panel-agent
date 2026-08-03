@@ -118,7 +118,7 @@ EXPECT_GOARCH={{printf "%q" .GOARCH}}
 BIN_PATH=/usr/local/bin/1pm
 UNIT_PATH=/etc/systemd/system/1pm-agent.service
 
-log()  { echo "==> $*"; }
+log()  { echo "==> $*" >&2; }
 die()  { echo "error: $*" >&2; exit 1; }
 
 if [[ "$(id -u)" -ne 0 ]]; then

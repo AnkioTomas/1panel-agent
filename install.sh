@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # 1pm Master one-click installer
 # Usage:
-#   curl -fsSL <script-url> | sudo bash
-#   curl -fsSL <script-url> | sudo INSTALL_CDN=cn VERSION=v0.0.1 bash
+#   # 推荐：仓库内 install.sh，经 jsDelivr / akams 加速
+#   curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+#   curl -fsSL https://cdn.akams.cn/jsd/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+#
+#   # 或 GitHub Release 附件
+#   curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
 #
 # INSTALL_CDN:  auto (default) | global | cn
 # VERSION:      empty = latest GitHub release
 # REPO:         AnkioTomas/1panel-agent
+#
+# 二进制下载：auto/cn 会从 https://github.akams.cn/ 节点列表测速，
+# 选延迟最低的代理，按 https://<node>/https://github.com/... 拉取。
 set -euo pipefail
 
 REPO="${REPO:-AnkioTomas/1panel-agent}"
@@ -16,16 +23,42 @@ BIN_PATH="${BIN_PATH:-/usr/local/bin/1pm}"
 UNIT_PATH="${UNIT_PATH:-/etc/systemd/system/1pm-master.service}"
 GITHUB_API="${GITHUB_API:-https://api.github.com}"
 GITHUB_DL="${GITHUB_DL:-https://github.com}"
+AKAMS_HOME="${AKAMS_HOME:-https://github.akams.cn}"
 
-# Domestic mirrors that prefix the original GitHub/API URL.
-CN_MIRRORS=(
-  "https://ghfast.top/"
-  "https://gh-proxy.com/"
-  "https://mirror.ghproxy.com/"
-  "https://ghproxy.net/"
+# akams 贡献节点种子（页面动态列表拉取失败时使用；格式: host，不含 https://）
+AKAMS_SEED_NODES=(
+  gh.dpik.top
+  github.tbap.top
+  ghfile.geekertao.top
+  ghproxy.net
+  gh-proxy.com
+  gh-proxy.net
+  cdn.gh-proxy.com
+  github.dpik.top
+  github-proxy.memory-echoes.cn
+  gh.felicity.ac.cn
+  ghfast.top
+  gh.monlor.com
+  gh.ddlc.top
+  gitproxy.click
+  ghpr.cc
+  gh.sixyin.com
+  gh.jasonzeng.dev
+  gh.idayer.com
+  ghproxy.felicity.land
+  gh.tryxd.cn
+  gitproxy.mrhjx.cn
+  gh.chjina.com
+  gh.noki.icu
+  gh.acmsz.top
+  gh.catmak.name
 )
 
-log()  { echo "==> $*"; }
+# 测速后的代理前缀：https://host/  （后面拼 https://github.com/...）
+RANKED_MIRRORS=()
+
+# 日志必须进 stderr：否则 command substitution 会把日志吃进变量。
+log()  { echo "==> $*" >&2; }
 warn() { echo "warn: $*" >&2; }
 die()  { echo "error: $*" >&2; exit 1; }
 
@@ -83,131 +116,254 @@ detect_os() {
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 http_get() {
-  # http_get URL OUT_FILE
+  # http_get URL OUT_FILE — 成功返回 0；失败保留非零，不吞错误码
   local url="$1" out="$2"
   if have_cmd curl; then
-    curl -fsSL --connect-timeout 8 --max-time 120 -o "$out" "$url"
+    curl -fL --connect-timeout 12 --max-time 180 --retry 1 --retry-delay 1 -o "$out" "$url"
   elif have_cmd wget; then
-    wget -q -O "$out" "$url"
+    wget -q -O "$out" --timeout=180 "$url"
   else
     die "need curl or wget"
   fi
 }
 
-http_ok() {
-  # probe URL — return 0 if reachable
-  local url="$1"
-  if have_cmd curl; then
-    curl -fsI --connect-timeout 5 --max-time 15 "$url" >/dev/null 2>&1
-  elif have_cmd wget; then
-    wget -q --spider --timeout=15 "$url" >/dev/null 2>&1
+# API 成功时记录的镜像前缀（如 https://gh.dpik.top/），下载优先用同一镜像。
+# 注意：不能用 tag="$(resolve_version)" —— 命令替换是子 shell，全局变量会丢。
+PREFERRED_MIRROR=""
+RESOLVED_TAG=""
+
+# 合法代理主机名（拒绝中文域名等，避免 URL 编码坑）
+_is_proxy_host() {
+  [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ ]]
+}
+
+# 从 github.akams.cn 前端包解析节点列表（失败则静默返回）
+fetch_akams_nodes() {
+  have_cmd curl || return 1
+  local html jsdir path f out
+  html="$(curl -fsSL --connect-timeout 8 --max-time 15 "$AKAMS_HOME/" 2>/dev/null)" || return 1
+  jsdir="$(mktemp -d)"
+  out="$(mktemp)"
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    curl -fsSL --connect-timeout 5 --max-time 12 "${AKAMS_HOME}${path}" \
+      -o "$jsdir/${path##*/}" 2>/dev/null || true
+  done < <(printf '%s' "$html" | grep -oE '/_next/static/chunks/[^" ]+\.js' | sort -u)
+  for f in "$jsdir"/*.js; do
+    [[ -f "$f" ]] || continue
+    grep -oE 'value:"[A-Za-z0-9][A-Za-z0-9.-]+\.[A-Za-z]{2,}"' "$f" 2>/dev/null \
+      | sed 's/value:"//;s/"$//' >> "$out" || true
+  done
+  if [[ -s "$out" ]]; then
+    sort -u "$out"
+    rm -rf "$jsdir" "$out"
+    return 0
+  fi
+  rm -rf "$jsdir" "$out"
+  return 1
+}
+
+# 合并种子 + 在线列表 → 去重主机名
+collect_proxy_hosts() {
+  local h seen=$'\n'
+  for h in "${AKAMS_SEED_NODES[@]}"; do
+    _is_proxy_host "$h" || continue
+    case "$seen" in
+      *$'\n'"$h"$'\n'*) continue ;;
+    esac
+    seen="${seen}${h}"$'\n'
+    printf '%s\n' "$h"
+  done
+  while IFS= read -r h; do
+    _is_proxy_host "$h" || continue
+    case "$seen" in
+      *$'\n'"$h"$'\n'*) continue ;;
+    esac
+    seen="${seen}${h}"$'\n'
+    printf '%s\n' "$h"
+  done < <(fetch_akams_nodes 2>/dev/null || true)
+}
+
+# 并行测速：对 https://host/https://api.github.com/... 发短请求，按耗时排序写入 RANKED_MIRRORS
+rank_mirrors() {
+  RANKED_MIRRORS=()
+  [[ "$INSTALL_CDN" == "global" ]] && return 0
+
+  local probe="${GITHUB_API}/repos/${REPO}/releases/latest"
+  local hosts=() h dir code t line n=0 max_probe=24
+  local -a pids=()
+
+  log "测速加速节点（来源: ${AKAMS_HOME}）…"
+  while IFS= read -r h; do
+    hosts+=("$h")
+  done < <(collect_proxy_hosts)
+
+  [[ ${#hosts[@]} -eq 0 ]] && return 0
+
+  dir="$(mktemp -d)"
+  for h in "${hosts[@]}"; do
+    [[ $n -ge $max_probe ]] && break
+    n=$((n + 1))
+    (
+      # http_code time_total host
+      if have_cmd curl; then
+        line="$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' \
+          --connect-timeout 3 --max-time 6 -L "https://${h}/${probe}" 2>/dev/null || true)"
+      else
+        line=""
+      fi
+      code="${line%% *}"
+      t="${line##* }"
+      [[ "$code" =~ ^2[0-9][0-9]$ ]] || exit 0
+      printf '%s %s\n' "$t" "$h" > "$dir/$h"
+    ) &
+    pids+=($!)
+    # 限制并发，避免把脚本/对方都打挂
+    if (( ${#pids[@]} >= 8 )); then
+      wait "${pids[0]}" 2>/dev/null || true
+      pids=("${pids[@]:1}")
+    fi
+  done
+  for pid in "${pids[@]+"${pids[@]}"}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+
+  local ranked=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    h="${line##* }"
+    ranked+=("https://${h}/")
+    log "  可用 ${h} (${line%% *}s)"
+  done < <(cat "$dir"/* 2>/dev/null | sort -n | head -n 8)
+  rm -rf "$dir"
+
+  RANKED_MIRRORS=("${ranked[@]}")
+  if [[ ${#RANKED_MIRRORS[@]} -eq 0 ]]; then
+    warn "节点测速无可用结果，回退种子列表顺序尝试"
+    for h in "${AKAMS_SEED_NODES[@]}"; do
+      _is_proxy_host "$h" || continue
+      RANKED_MIRRORS+=("https://${h}/")
+    done
   else
-    return 1
+    log "选用最快节点: ${RANKED_MIRRORS[0]#https://}"
   fi
 }
 
-# Build candidate download bases: each is a prefix; append path without leading slash.
-# global: https://github.com/ + OWNER/REPO/releases/download/TAG/FILE
-# cn:     https://ghfast.top/https://github.com/ + ...
+_emit_unique() {
+  local value="$1"
+  case "$__SEEN_BASES" in
+    *"|${value}|"*) return ;;
+  esac
+  __SEEN_BASES="${__SEEN_BASES}|${value}|"
+  printf '%s\n' "$value"
+}
+
+# 下载 base：前缀 + github.com/ + REPO/releases/download/...
 candidate_bases() {
-  local mode="$1"
+  local mode="$1" m
+  __SEEN_BASES=""
+  if [[ -n "$PREFERRED_MIRROR" ]]; then
+    _emit_unique "${PREFERRED_MIRROR}${GITHUB_DL}/"
+  fi
   case "$mode" in
     global)
-      echo "${GITHUB_DL}/"
+      _emit_unique "${GITHUB_DL}/"
       ;;
-    cn)
-      local m
-      for m in "${CN_MIRRORS[@]}"; do
-        echo "${m}${GITHUB_DL}/"
+    cn|auto|*)
+      for m in "${RANKED_MIRRORS[@]+"${RANKED_MIRRORS[@]}"}"; do
+        _emit_unique "${m}${GITHUB_DL}/"
       done
-      ;;
-    auto|*)
-      echo "${GITHUB_DL}/"
-      local m
-      for m in "${CN_MIRRORS[@]}"; do
-        echo "${m}${GITHUB_DL}/"
-      done
+      _emit_unique "${GITHUB_DL}/"
       ;;
   esac
 }
 
 candidate_apis() {
-  local mode="$1"
+  local mode="$1" m
   case "$mode" in
     global)
-      echo "${GITHUB_API}/"
+      printf '%s\n' "${GITHUB_API}/"
       ;;
-    cn)
-      local m
-      for m in "${CN_MIRRORS[@]}"; do
-        echo "${m}${GITHUB_API}/"
+    cn|auto|*)
+      for m in "${RANKED_MIRRORS[@]+"${RANKED_MIRRORS[@]}"}"; do
+        printf '%s\n' "${m}${GITHUB_API}/"
       done
-      # some mirrors only proxy github.com, not api — still try raw api last
-      echo "${GITHUB_API}/"
-      ;;
-    auto|*)
-      echo "${GITHUB_API}/"
-      local m
-      for m in "${CN_MIRRORS[@]}"; do
-        echo "${m}${GITHUB_API}/"
-      done
+      printf '%s\n' "${GITHUB_API}/"
       ;;
   esac
 }
 
+# 从 api base（…/api.github.com/ 或 mirror+api）提取镜像前缀；直连则空。
+mirror_prefix_from_api_base() {
+  local base="$1"
+  case "$base" in
+    "${GITHUB_API}/") echo "" ;;
+    *"https://api.github.com/"*) echo "${base%https://api.github.com/}" ;;
+    *) echo "" ;;
+  esac
+}
+
 resolve_version() {
+  # 结果写入 RESOLVED_TAG / PREFERRED_MIRROR（勿用 stdout 捕获）
+  RESOLVED_TAG=""
   if [[ -n "$VERSION" ]]; then
-    echo "$VERSION"
+    local api base tmp
+    tmp="$(mktemp)"
+    while IFS= read -r base; do
+      [[ -n "$base" ]] || continue
+      api="${base}repos/${REPO}/releases/tags/${VERSION}"
+      if http_get "$api" "$tmp" >/dev/null 2>&1; then
+        PREFERRED_MIRROR="$(mirror_prefix_from_api_base "$base")"
+        rm -f "$tmp"
+        RESOLVED_TAG="$VERSION"
+        return
+      fi
+    done < <(candidate_apis "$INSTALL_CDN")
+    rm -f "$tmp"
+    RESOLVED_TAG="$VERSION"
     return
   fi
   local api base tmp tag
   tmp="$(mktemp)"
-  for base in $(candidate_apis "$INSTALL_CDN"); do
+  while IFS= read -r base; do
+    [[ -n "$base" ]] || continue
     api="${base}repos/${REPO}/releases/latest"
-    if http_get "$api" "$tmp" 2>/dev/null; then
+    if http_get "$api" "$tmp" >/dev/null 2>&1; then
       tag="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp" | head -n1)"
-      rm -f "$tmp"
       if [[ -n "$tag" ]]; then
-        log "latest release: $tag (via ${base%%/})"
-        echo "$tag"
+        PREFERRED_MIRROR="$(mirror_prefix_from_api_base "$base")"
+        rm -f "$tmp"
+        log "latest release: $tag (via ${base%/})"
+        RESOLVED_TAG="$tag"
         return
       fi
     fi
-  done
+  done < <(candidate_apis "$INSTALL_CDN")
   rm -f "$tmp"
   die "cannot resolve latest release (try VERSION=vX.Y.Z or INSTALL_CDN=cn)"
 }
 
-pick_base_for_asset() {
-  # pick_base_for_asset TAG FILE -> prints working base prefix
-  local tag="$1" file="$2" base url
-  for base in $(candidate_bases "$INSTALL_CDN"); do
-    url="${base}${REPO}/releases/download/${tag}/${file}"
-    if http_ok "$url"; then
-      echo "$base"
-      return
-    fi
-  done
-  base="$(candidate_bases "$INSTALL_CDN" | head -n1)"
-  echo "$base"
-}
-
 download_asset() {
-  # download_asset BASE TAG FILE OUT [required=1]
-  local base="$1" tag="$2" file="$3" out="$4" required="${5:-1}" url b
-  url="${base}${REPO}/releases/download/${tag}/${file}"
-  if http_get "$url" "$out" 2>/dev/null; then
+  # download_asset TAG FILE OUT [required=1]
+  local tag="$1" file="$2" out="$3" required="${4:-1}"
+  local base url tried="" ok=0
+  while IFS= read -r base; do
+    [[ -n "$base" ]] || continue
+    url="${base}${REPO}/releases/download/${tag}/${file}"
+    tried="${tried}${tried:+ }${url}"
+    if http_get "$url" "$out" >/dev/null 2>&1 && [[ -s "$out" ]]; then
+      log "已下载 $file <- ${base%/}"
+      ok=1
+      break
+    fi
+    warn "下载失败: $url"
+    rm -f "$out"
+  done < <(candidate_bases "$INSTALL_CDN")
+  if [[ "$ok" -eq 1 ]]; then
     return 0
   fi
-  for b in $(candidate_bases "$INSTALL_CDN"); do
-    [[ "$b" == "$base" ]] && continue
-    url="${b}${REPO}/releases/download/${tag}/${file}"
-    if http_get "$url" "$out" 2>/dev/null; then
-      return 0
-    fi
-  done
   if [[ "$required" == "1" ]]; then
-    die "download failed: $file"
+    die "download failed: $file（已尝试: $tried）"
   fi
   return 1
 }
@@ -335,21 +491,23 @@ main() {
     die "本机已安装 1pm agent，不能同时作为 master。先执行: 1pm uninstall"
   fi
 
-  local os arch tag asset base tmpdir ver
+  local os arch tag asset tmpdir ver
   os="$(detect_os)"
   arch="$(detect_arch)"
   asset="1pm_${os}_${arch}"
 
-  tag="$(resolve_version)"
+  rank_mirrors
+  resolve_version
+  tag="$RESOLVED_TAG"
+  [[ "$tag" =~ ^v?[0-9] ]] || die "invalid release tag: $tag"
   log "安装 ${tag} (${os}/${arch})"
   tmpdir="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap 'rm -rf "'"$tmpdir"'"' EXIT
 
-  base="$(pick_base_for_asset "$tag" "$asset")"
   log "下载二进制…"
-  download_asset "$base" "$tag" "$asset" "$tmpdir/$asset" 1
-  download_asset "$base" "$tag" "checksums.txt" "$tmpdir/checksums.txt" 0 || true
+  download_asset "$tag" "$asset" "$tmpdir/$asset" 1
+  download_asset "$tag" "checksums.txt" "$tmpdir/checksums.txt" 0 || true
   verify_checksum "$tmpdir" "$asset" "$tmpdir/checksums.txt"
 
   systemctl stop 1pm-master.service 2>/dev/null || true

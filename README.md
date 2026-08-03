@@ -99,17 +99,22 @@ Agent ── WebSocket + HMAC ──▶ Master
 
 ### 1. 安装 Master
 
-**GitHub（海外）**
+**推荐（jsDelivr / akams，拉仓库内 `install.sh`）**
 
 ```bash
-curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
 ```
 
-**国内镜像**
+```bash
+curl -fsSL https://cdn.akams.cn/jsd/gh/AnkioTomas/1panel-agent@main/install.sh | sudo bash
+```
+
+脚本会从 [github.akams.cn](https://github.akams.cn/) 拉取加速节点并测速，自动选最快节点下载 Release 二进制。
+
+**GitHub Release（海外直连）**
 
 ```bash
-curl -fsSL https://ghfast.top/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh \
-  | sudo INSTALL_CDN=cn bash
+curl -fsSL https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo INSTALL_CDN=global bash
 ```
 
 可选环境变量：`INSTALL_CDN=auto|global|cn`、`VERSION=v0.1.0`。
