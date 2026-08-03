@@ -362,23 +362,65 @@ function fmtCPU(v){
   if(v==null || isNaN(v)) return '-';
   return Number(v).toFixed(1)+'%';
 }
+// HTTP 非安全上下文 / 异步后丢失用户手势时，clipboard API 会失败；用 textarea 回退。
+function fallbackCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text;
+  ta.setAttribute('readonly','');
+  ta.style.cssText='position:fixed;left:-9999px;top:0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  let ok=false;
+  try{ ok=document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+  return ok;
+}
+function applyInstallCmd(data){
+  if(!data || !data.install) throw new Error('empty command');
+  document.getElementById('reg').textContent=data.install;
+  return data.install;
+}
+function fetchInstallCmd(){
+  return fetch('/__mp/api/install-command',{credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const ct=r.headers.get('content-type')||'';
+    if(ct.indexOf('json')<0) throw new Error('接口返回非 JSON');
+    return r.json();
+  }).then(applyInstallCmd);
+}
+// 同步拉取：必须在 click 手势内完成，否则 HTTP 下剪贴板会被浏览器拒绝。
+function fetchInstallCmdSync(){
+  const xhr=new XMLHttpRequest();
+  xhr.open('GET','/__mp/api/install-command',false);
+  xhr.withCredentials=true;
+  xhr.send(null);
+  if(xhr.status!==200) throw new Error('HTTP '+xhr.status);
+  let data;
+  try{ data=JSON.parse(xhr.responseText); }catch(e){ throw new Error('接口返回非 JSON'); }
+  return applyInstallCmd(data);
+}
 function copyReg(){
   const btn=document.getElementById('btnCopy');
   btn.disabled=true;
-  fetch('/__mp/api/install-command',{credentials:'include'}).then(r=>{
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(data=>{
-    if(!data.install) throw new Error('empty command');
-    document.getElementById('reg').textContent=data.install;
-    return navigator.clipboard.writeText(data.install);
-  }).then(()=>{
-    showToast('复制成功');
-  }).catch(e=>{
-    showToast('复制失败: '+e.message, true);
-  }).finally(()=>{
-    btn.disabled=false;
-  });
+  try{
+    const text=fetchInstallCmdSync();
+    if(!fallbackCopy(text)){
+      const el=document.getElementById('reg');
+      const range=document.createRange();
+      range.selectNodeContents(el);
+      const sel=window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      showToast('请按 Ctrl+C / ⌘C 复制', true);
+    }else{
+      showToast('复制成功');
+    }
+  }catch(e){
+    showToast('复制失败: '+(e&&e.message?e.message:e), true);
+  }
+  btn.disabled=false;
 }
 function rotateToken(){
   if(!confirm('轮换后旧安装命令与已注册 Agent 立即失效，需重新 curl|bash。继续？')) return;
@@ -437,8 +479,10 @@ function refreshAgents(){
     renderAgents(Array.isArray(list)?list:[]);
   }).catch(()=>{});
 }
+fetchInstallCmd().catch(function(){});
 refreshAgents();
 setInterval(refreshAgents, 5000);
+setInterval(function(){ fetchInstallCmd().catch(function(){}); }, 60000);
 </script>
 </body>
 </html>`))
