@@ -244,7 +244,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	respBody = maybeGunzip(respBody, respMeta.Headers)
 	dropHopHeaders(respMeta.Headers)
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
-		respBody = s.injectHookHTML(respBody, s.DeviceIP())
+		respBody = s.injectHookHTML(respBody, s.displayHost(r))
 	}
 	rewriteSetCookieToRemoteNamespace(respMeta.Headers)
 
@@ -370,7 +370,7 @@ func (s *Server) listenPort() string {
 }
 
 // AdvertiseHost 返回安装命令用的 host:port。
-// 优先 PublicHost（NAT），否则用浏览器 Host，再否则探测局域网 IP。
+// 优先 PublicHost（NAT），否则用浏览器 Host；不再猜测网卡 IP。
 func (s *Server) AdvertiseHost(r *http.Request) string {
 	if s.PublicHost != "" {
 		if strings.Contains(s.PublicHost, ":") {
@@ -381,8 +381,26 @@ func (s *Server) AdvertiseHost(r *http.Request) string {
 	if r != nil && r.Host != "" {
 		return r.Host
 	}
-	if ip := DetectLANIP(); ip != "" {
-		return ip + ":" + s.listenPort()
-	}
 	return s.Listen
+}
+
+// displayHost 返回 UI/注入脚本用的主机名：PublicHost 或请求 Host，无则空。
+func (s *Server) displayHost(r *http.Request) string {
+	if s.PublicHost != "" {
+		host := s.PublicHost
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.Trim(host, "[]")
+		if host != "" && host != "0.0.0.0" && host != "::" {
+			return host
+		}
+	}
+	if r != nil && r.Host != "" {
+		if h, _, err := net.SplitHostPort(r.Host); err == nil {
+			return h
+		}
+		return r.Host
+	}
+	return ""
 }

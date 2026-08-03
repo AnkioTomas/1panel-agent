@@ -3,12 +3,16 @@ package master
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 )
+
+// clientHostKey 在反代 Director 中保存浏览器原始 Host，供 ModifyResponse 注入使用。
+type clientHostKey struct{}
 
 // sidebarHook 生成注入 1Panel HTML 的侧边栏切换脚本（含 Master IP 展示）。
 func sidebarHook(masterIP string) string {
@@ -319,6 +323,7 @@ func (s *Server) wrapLocalProxy() {
 	}
 	upstream := s.localProxy.Director
 	s.localProxy.Director = func(r *http.Request) {
+		*r = *r.WithContext(context.WithValue(r.Context(), clientHostKey{}, r.Host))
 		upstream(r)
 		r.Header.Del("Accept-Encoding")
 	}
@@ -350,7 +355,13 @@ func (s *Server) wrapLocalProxy() {
 				return nil
 			}
 		}
-		patched := s.injectHookHTML(body, s.DeviceIP())
+		var req *http.Request
+		if resp.Request != nil {
+			if h, ok := resp.Request.Context().Value(clientHostKey{}).(string); ok && h != "" {
+				req = &http.Request{Host: h}
+			}
+		}
+		patched := s.injectHookHTML(body, s.displayHost(req))
 		resp.Body = io.NopCloser(bytes.NewReader(patched))
 		resp.ContentLength = int64(len(patched))
 		resp.Header.Set("Content-Length", strconv.Itoa(len(patched)))

@@ -100,7 +100,7 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 		Agents:        agents,
 		Register:      s.InstallCommand(r),
 		Host:          host,
-		DeviceIP:      s.DeviceIP(),
+		DeviceIP:      s.displayHost(r),
 		Entrance:      s.Entrance,
 		LocalPanel:    s.LocalPanel,
 		MasterVersion: panel.ReadSystemVersion(),
@@ -228,7 +228,7 @@ tr:last-child td{border-bottom:0}
     </svg>
     <span>多机节点</span>
   </div>
-  <div class="device" title="本机网卡地址">
+  <div class="device" title="宣告主机（PublicHost 或当前访问 Host）">
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm0 2a8 8 0 0 1 7.75 6H4.25A8 8 0 0 1 12 4zm0 16a8 8 0 0 1-7.75-6h15.5A8 8 0 0 1 12 20z"/></svg>
     <strong>{{if .DeviceIP}}{{.DeviceIP}}{{else}}-{{end}}</strong>
   </div>
