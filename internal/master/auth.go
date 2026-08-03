@@ -1,61 +1,58 @@
 package master
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
+
+	"1panel-agent/internal/config"
 )
 
 const (
 	authCookie = "mp_auth"
-	authTTL    = 7 * 24 * time.Hour
-	authSkew   = 5 * time.Minute
 )
 
+// issueAuthCookie 确认 1Panel 授权通过后生成全新 sessionSecret 并覆盖签发（单点 Session 顶掉旧会话）。
 func (s *Server) issueAuthCookie(w http.ResponseWriter) {
-	exp := time.Now().Add(authTTL).Unix()
-	payload := strconv.FormatInt(exp, 10)
-	// Token doubles as HMAC secret; never expose raw in UI.
-	mac := hmac.New(sha256.New, []byte(s.currentToken()))
-	_, _ = mac.Write([]byte(payload))
-	val := payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	sec, err := config.GenerateToken()
+	if err != nil {
+		return
+	}
+	s.tokenMu.Lock()
+	s.sessionSecret = sec
+	s.tokenMu.Unlock()
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookie,
-		Value:    val,
+		Value:    sec,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(authTTL.Seconds()),
 	})
 }
 
+// validAuthCookie 验证 mp_auth Cookie：长度必须匹配且与最新内存 sessionSecret 时序一致。
 func (s *Server) validAuthCookie(r *http.Request) bool {
 	c, err := r.Cookie(authCookie)
-	if err != nil || c.Value == "" {
+	if err != nil || len(c.Value) != 32 {
 		return false
 	}
-	parts := strings.Split(c.Value, ".")
-	if len(parts) != 2 {
+	s.tokenMu.RLock()
+	secret := s.sessionSecret
+	s.tokenMu.RUnlock()
+
+	if len(secret) != 32 {
 		return false
 	}
-	exp, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || time.Now().Unix() > exp {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(s.currentToken()))
-	_, _ = mac.Write([]byte(parts[0]))
-	want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(want), []byte(parts[1]))
+	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(secret)) == 1
 }
 
-// localPanelLoggedIn checks the caller's cookies against the local 1Panel upstream.
+// localPanelLoggedIn 代理向本地 1Panel 接口确认访问者是否已拥有合法的 1Panel 登录态。
 func (s *Server) localPanelLoggedIn(r *http.Request) bool {
 	if s.LocalPanel == "" {
 		return false
@@ -86,11 +83,8 @@ func (s *Server) localPanelLoggedIn(r *http.Request) bool {
 	return ar.Code == 200
 }
 
-// requireMPAuth allows access if mp_auth is valid, or if local 1Panel session is valid (then issues mp_auth).
-func (s *Server) requireMPAuth(w http.ResponseWriter, r *http.Request) bool {
-	if s.LocalPanel == "" {
-		return true
-	}
+// ensureMPAuth 是 /__mp/ 统一鉴权门禁：验证失败时 API 返 401，页面请求重定向至 1Panel 登录页。
+func (s *Server) ensureMPAuth(w http.ResponseWriter, r *http.Request, path string) bool {
 	if s.validAuthCookie(r) {
 		return true
 	}
@@ -98,17 +92,25 @@ func (s *Server) requireMPAuth(w http.ResponseWriter, r *http.Request) bool {
 		s.issueAuthCookie(w)
 		return true
 	}
-	// Not authorized: send to local panel login.
+
+	// 未授权请求处理
+	isAPI := path == "/touch" || strings.HasPrefix(path, "/api/")
+	if isAPI {
+		s.denyAPI(w, "unauthorized")
+		return false
+	}
+
+	// 页面请求重定向至本地 1Panel 登录页
 	target := "/"
 	if s.Entrance != "" {
 		target = "/" + strings.TrimPrefix(s.Entrance, "/")
 	}
-	// Clear remote node so login hits local panel.
 	http.SetCookie(w, &http.Cookie{Name: "mp_node", Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, target+"?mp_return=/__mp/", http.StatusFound)
 	return false
 }
 
+// denyAPI 为未经授权的 Master API 请求返回统一的 401 错误响应。
 func (s *Server) denyAPI(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
