@@ -150,7 +150,9 @@ sign_query() {
   printf 'timestamp=%s&sign=%s' "$ts" "$sign"
 }
 
-# curl|bash 时 stdin 是脚本本身，密码必须从 /dev/tty 读；也可用 PANEL_PASS 环境变量。
+# curl|bash 时 stdin 是脚本本身，密码必须从 /dev/tty 读。
+# 非交互：curl ... | sudo PANEL_PASS='...' bash
+# 注意 PANEL_PASS 必须在管道右侧 bash/sudo 上，写在 curl 前无效。
 ask_panel_password() {
   if [[ -n "${PANEL_PASS:-}" ]]; then
     return
@@ -176,16 +178,24 @@ ask_panel_password() {
   done
 }
 
-# 保存前对本机面板做真实登录校验；失败则清空重问（最多 5 次）。
+# 保存前对本机面板做真实登录校验；失败则重问（无 TTY / 环境变量模式直接失败）。
 save_panel_password() {
-  local tries=0
+  local tries=0 from_env=0
+  [[ -n "${PANEL_PASS:-}" ]] && from_env=1
   while true; do
     ask_panel_password
     log "验证并保存面板密码…"
     if "$BIN_PATH" agent setpwd --password "$PANEL_PASS"; then
       return 0
     fi
-    echo "密码验证失败，请重试" > /dev/tty
+    if [[ "$from_env" -eq 1 ]]; then
+      die "PANEL_PASS 密码验证失败（请检查本机 1Panel 密码）"
+    fi
+    if [[ -w /dev/tty ]]; then
+      echo "密码验证失败，请重试" > /dev/tty
+    else
+      echo "密码验证失败，请重试" >&2
+    fi
     PANEL_PASS=""
     tries=$((tries + 1))
     [[ "$tries" -lt 5 ]] || die "密码验证失败次数过多"
