@@ -14,7 +14,7 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/__mp")
 
 	// 切回本机必须先于鉴权：此时浏览器里是远端 psession，
-	// localPanelLoggedIn 会失败并被踢去登录页，mp_l_* 永远得不到恢复。
+	// localPanelLoggedIn 会失败；本机会话在 Master 内存里，由 handleLocal 写回。
 	if path == "/local" {
 		s.handleLocal(w, r)
 		return

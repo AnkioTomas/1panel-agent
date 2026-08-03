@@ -203,6 +203,13 @@ func (c *Client) getSessionCookies() []*http.Cookie {
 	return c.sessCookies
 }
 
+func (c *Client) clearSession() {
+	c.sessMu.Lock()
+	c.sessCookies = nil
+	c.sessUntil = time.Time{}
+	c.sessMu.Unlock()
+}
+
 // applyEntrance 在启用安全入口时注入 EntranceCode 请求头。
 func (c *Client) applyEntrance(h http.Header) {
 	if c.Cfg.PanelEntrance == "" {
@@ -238,25 +245,11 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	}
 	target := panelURL.ResolveReference(ref)
 
-	req, err := http.NewRequest(meta.Method, target.String(), body)
+	bodyBytes, err := io.ReadAll(body)
 	if err != nil {
-		c.writeErr(stream, http.StatusBadGateway, err.Error())
+		c.writeErr(stream, http.StatusBadGateway, "read body: "+err.Error())
 		return
 	}
-	protocol.ApplyHeader(req.Header, meta.Headers)
-	req.Header.Del("Accept-Encoding")
-	req.Host = panelURL.Host
-	c.applyEntrance(req.Header)
-
-	// 浏览器尚未带会话时注入自动登录 Cookie，并经响应 Set-Cookie 回写浏览器。
-	var injected []*http.Cookie
-	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
-		injected = c.getSessionCookies()
-		for _, cookie := range injected {
-			req.AddCookie(cookie)
-		}
-	}
-	alignRequestCSRF(req.Header)
 
 	client := &http.Client{
 		Timeout: 0,
@@ -270,22 +263,56 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 			MaxIdleConnsPerHost: 8,
 		},
 	}
-	resp, err := client.Do(req)
+
+	injected, status, hdrs, raw, err := c.proxyPanelOnce(client, meta, target, panelURL.Host, bodyBytes)
 	if err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
 		return
 	}
-	defer resp.Body.Close()
+	if panelUnauthenticated(status, raw) {
+		c.clearSession()
+		injected, status, hdrs, raw, err = c.proxyPanelOnce(client, meta, target, panelURL.Host, bodyBytes)
+		if err != nil {
+			c.writeErr(stream, http.StatusBadGateway, err.Error())
+			return
+		}
+	}
 
 	respMeta := &protocol.ResponseMeta{
-		Status:  resp.StatusCode,
-		Headers: protocol.HeaderFromHTTP(resp.Header),
+		Status:  status,
+		Headers: hdrs,
 	}
 	appendSessionSetCookies(respMeta.Headers, injected)
 	if err := protocol.WriteJSON(stream, respMeta); err != nil {
 		return
 	}
-	_ = protocol.CopyChunks(stream, resp.Body)
+	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
+}
+
+func (c *Client) proxyPanelOnce(client *http.Client, meta *protocol.RequestMeta, target *url.URL, host string, body []byte) ([]*http.Cookie, int, map[string][]string, []byte, error) {
+	req, err := http.NewRequest(meta.Method, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, nil, nil, err
+	}
+	protocol.ApplyHeader(req.Header, meta.Headers)
+	req.Header.Del("Accept-Encoding")
+	req.Host = host
+	c.applyEntrance(req.Header)
+
+	injected := c.getSessionCookies()
+	applyAgentSession(req, injected)
+	alignRequestCSRF(req.Header)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return injected, 0, nil, nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return injected, 0, nil, nil, err
+	}
+	return injected, resp.StatusCode, protocol.HeaderFromHTTP(resp.Header), raw, nil
 }
 
 // handleWS 将隧道 WebSocket 升级请求转发到本机 1Panel 并双向拷贝帧。
@@ -336,11 +363,7 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	req.Header.Set("Host", host)
 	c.applyEntrance(req.Header)
 
-	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
-		for _, cookie := range c.getSessionCookies() {
-			req.AddCookie(cookie)
-		}
-	}
+	applyAgentSession(req, c.getSessionCookies())
 	alignRequestCSRF(req.Header)
 
 	if err := req.Write(conn); err != nil {
@@ -397,6 +420,56 @@ func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 	_ = protocol.CopyChunks(stream, strings.NewReader(msg))
 }
 
+// applyAgentSession 去掉请求里的面板会话 Cookie，再注入 Agent 自持会话。
+func applyAgentSession(req *http.Request, cookies []*http.Cookie) {
+	kept := nonPanelCookieHeader(req.Header.Get("Cookie"))
+	req.Header.Del("Cookie")
+	if kept != "" {
+		req.Header.Set("Cookie", kept)
+	}
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+}
+
+func nonPanelCookieHeader(header string) string {
+	var parts []string
+	for part := range strings.SplitSeq(header, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, _, ok := strings.Cut(part, "=")
+		if !ok || isPanelSessionCookieName(name) {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func isPanelSessionCookieName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "psession", "pcsrftoken", "securityentrance", "panel_public_key":
+		return true
+	default:
+		return false
+	}
+}
+
+func panelUnauthenticated(status int, body []byte) bool {
+	if status == http.StatusUnauthorized {
+		return true
+	}
+	var ar struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return false
+	}
+	return ar.Code == 401
+}
+
 // alignRequestCSRF 使 X-CSRF-Token 与 Cookie 中的 pcsrftoken 一致（1Panel 双提交校验）。
 func alignRequestCSRF(h http.Header) {
 	csrf := cookieValueFromHeader(h.Get("Cookie"), "pcsrftoken")
@@ -413,9 +486,7 @@ func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie
 		return
 	}
 	for _, c := range cookies {
-		switch strings.ToLower(c.Name) {
-		case "psession", "pcsrftoken", "securityentrance", "panel_public_key":
-		default:
+		if !isPanelSessionCookieName(c.Name) {
 			continue
 		}
 		sc := &http.Cookie{
@@ -446,9 +517,4 @@ func cookieValueFromHeader(header, name string) string {
 		}
 	}
 	return ""
-}
-
-// cookieHeaderHasName 判断 Cookie 头是否含有指定名称。
-func cookieHeaderHasName(header, name string) bool {
-	return cookieValueFromHeader(header, name) != ""
 }

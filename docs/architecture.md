@@ -50,8 +50,8 @@ Agent ──WebSocket+HMAC──▶ Master /agent/ws
 │   │   ├── registry.go          在线 Session + Stats 字段
 │   │   ├── stats.go             经 smux 拉 HostStats
 │   │   ├── install.go           /agent.sh、/agent.bin、install-command
-│   │   ├── cookies.go           mp_l_* 本机暂存 / 会话交换
-│   │   ├── switch.go            /__mp/go/{id}、/__mp/local（预热登录+交换 Cookie）
+│   │   ├── cookies.go           面板 Cookie 过滤 / Path 归一化 / 本机暂存辅助
+│   │   ├── switch.go            /__mp/go/{id}、/__mp/local（内存暂存本机会话）
 │   │   ├── token.go             Token 轮换
 │   │   ├── inject.go            侧栏节点切换 Hook
 │   │   ├── ui.go                /__mp/ 管理页 + /api/agents

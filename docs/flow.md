@@ -47,15 +47,15 @@ Browser ──GET /api/xxx──▶ Master
                             │  OpenStream + WriteRequestMeta(HTTP)
                             │  CopyChunks(body)
                             │
-                            │              Agent: 必要时自动登录本机 1Panel
+                            │              Agent: 始终注入自持会话并自动登录
                             │              Agent: 转发并回写 ResponseMeta + chunks
                             │
                             │  text/html → 注入侧栏 Hook
-                            │  Set-Cookie → 真名 psession（当前在远端节点）
+                            │  Set-Cookie → 远端 psession（覆盖浏览器面板 Cookie）
 Browser ◀── 响应 ──────────┘
 ```
 
-自动登录发生在 **Agent 侧**（解密 `panel_password_enc`），Master **不存**子机/主节点面板密码。
+自动登录发生在 **Agent 侧**（解密 `panel_password_enc`），Master **不存**子机面板密码；本机面板会话切走时暂存在 Master 内存。
 
 ---
 
@@ -79,11 +79,13 @@ Browser ◀── 响应 ──────────┘
 
 ### `/__mp/go/{id}`
 
-校验 Agent 在线 → 本机会话暂存 `mp_l_*` → 隧道预热自动登录 → 写入远端 `psession` → 写 `mp_node` → 302 `/`。
+校验 Agent 在线 → 本机面板 Cookie 暂存到 Master 内存 → 清浏览器面板 Cookie → 写 `mp_node` → 302 `/`。
+
+首次进子节点时 Agent 自动登录，经隧道 `Set-Cookie` 把远端会话写入浏览器。
 
 ### `/__mp/local`
 
-清除 `mp_node` → 302 回本机面板。
+清除 `mp_node` → 从 Master 内存恢复本机面板 Cookie → 302 `/`。
 
 后续根路径：有 `mp_node` 且在线 → 隧道；否则 → 本机 `localProxy`。
 
@@ -116,9 +118,9 @@ Browser ◀── 响应 ──────────┘
 
 ## 9. Cookie
 
-| 场景 | Cookie | 说明 |
-|------|--------|------|
-| 当前面板会话 | `psession` 等 | 本机或子节点，取决于是否选中远端 |
-| 本机暂存 | `mp_l_*` | 切到子节点时保存，切回恢复 |
+| 场景 | Cookie / 存储 | 说明 |
+|------|---------------|------|
+| 浏览器当前面板会话 | `psession` 等 | 本机或子节点；切到子节点后被 Agent 自动登录覆盖 |
+| 本机暂存 | Master 内存 `localSessCookies` | 切到子节点时保存，切回写回浏览器；不落盘 |
 | 当前节点 | `mp_node` | Agent ID；空=本机 |
 | 管理页 | `mp_auth` | 内存 sessionSecret |

@@ -6,13 +6,16 @@
 
 做法：`mp_node` Cookie 选节点 + **根路径**反代，绝对路径原样工作。
 
-## 2. 切换节点时交换会话 Cookie
+## 2. 本机会话在 Master，远端会话在 Agent
 
 同一浏览器不能同时用两套同名 `psession`。做法：
 
-- 切到子节点：本机会话写入 `mp_l_*`，再把 Agent 自动登录得到的会话写进真名 `psession` / `pcsrftoken`
-- 切回主节点：清掉当前面板 Cookie，从 `mp_l_*` 恢复
-- 隧道请求直接转发浏览器里的面板 Cookie（此时已是远端会话）
+- 切到子节点：Master 把本机面板 Cookie **暂存进进程内存**，并清掉浏览器里的面板 Cookie；设 `mp_node` 后 302
+- 隧道请求 **不转发** 面板会话 Cookie；Agent 用内存会话自动登录，并把 `Set-Cookie` 写回浏览器（覆盖为远端会话）
+- 切回主节点：清 `mp_node`，Master 把内存里的本机会话再 `Set-Cookie` 写回浏览器
+- Master **不持有** Agent Cookie；不做切换预热
+
+不在浏览器用 `mp_l_*` 暂存——远端自动登录会覆盖浏览器 Cookie，本机会话只能由 Master 持有。
 
 ## 3. 不读 core.db
 

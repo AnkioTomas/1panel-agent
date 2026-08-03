@@ -35,6 +35,10 @@ type Server struct {
 	reg           *Registry
 	localProxy    *httputil.ReverseProxy
 	tokenMu       sync.RWMutex
+
+	// 切到子节点时暂存的本机面板会话；不落盘。Agent Cookie 不在此列。
+	localSessMu      sync.Mutex
+	localSessCookies []*http.Cookie
 }
 
 // New 加载 Master 状态、接管 1Panel 端口并构造 Server。
@@ -205,7 +209,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	delete(headers, "Host")
 	// http.Header keys are canonical; force identity encoding for HTML injection.
 	delete(headers, "Accept-Encoding")
-	// 切换后浏览器 psession 已是远端会话，原样转发。
+	// 面板会话由 Agent 自持；控制 Cookie / 本机 psession 不进隧道。
 	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeHTTP,
