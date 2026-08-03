@@ -21,7 +21,7 @@ type Settings struct {
 
 // CLI 输出解析用正则。
 var (
-	versionLineRe = regexp.MustCompile(`(?m)(?:版本|Version)\s*:\s*(v?[0-9][^\s]*)`)
+	versionLineRe = regexp.MustCompile(`(?mi)^(?:版本|version)\s*:\s*(v?[0-9][^\s]*)`)
 	userLineRe    = regexp.MustCompile(`(?m)(?:用户|User)\s*:\s*(\S+)`)
 	// 1panel user-info: "Panel address: http://$LOCAL_IP:62045/tomas"
 	panelURLRe = regexp.MustCompile(`https?://[^\s]+`)
