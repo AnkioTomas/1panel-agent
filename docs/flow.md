@@ -51,7 +51,7 @@ Browser ──GET /api/xxx──▶ Master
                             │              Agent: 转发并回写 ResponseMeta + chunks
                             │
                             │  text/html → 注入侧栏 Hook
-                            │  Set-Cookie → mp_r_* 前缀
+                            │  Set-Cookie → 真名 psession（当前在远端节点）
 Browser ◀── 响应 ──────────┘
 ```
 
@@ -79,8 +79,7 @@ Browser ◀── 响应 ──────────┘
 
 ### `/__mp/go/{id}`
 
-校验 Agent 在线 → 写 `mp_node` Cookie → 302 到安全入口（或 `/`）。  
-**不在此处登录**；首次经隧道访问时由 Agent 自动登录并下发 `mp_r_*`。
+校验 Agent 在线 → 本机会话暂存 `mp_l_*` → 隧道预热自动登录 → 写入远端 `psession` → 写 `mp_node` → 302 `/`。
 
 ### `/__mp/local`
 
@@ -115,11 +114,11 @@ Browser ◀── 响应 ──────────┘
 
 ---
 
-## 9. Cookie 命名空间
+## 9. Cookie
 
 | 场景 | Cookie | 说明 |
 |------|--------|------|
-| 本机 1Panel | `psession` 等 | 不被远端覆盖 |
-| 远端 Agent | `mp_r_*` | 隧道发往 Agent 时剥前缀 |
-| 当前节点 | `mp_node` | Agent ID |
+| 当前面板会话 | `psession` 等 | 本机或子节点，取决于是否选中远端 |
+| 本机暂存 | `mp_l_*` | 切到子节点时保存，切回恢复 |
+| 当前节点 | `mp_node` | Agent ID；空=本机 |
 | 管理页 | `mp_auth` | 内存 sessionSecret |

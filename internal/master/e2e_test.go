@@ -136,9 +136,6 @@ echo 'User: testuser'
 	}
 	sc := resp.Header.Get("Set-Cookie")
 	if !strings.Contains(sc, "psession=") {
-		t.Fatalf("panel cookie not forwarded as psession: %q", sc)
-	}
-	if strings.Contains(sc, "mp_r_psession=") {
-		t.Fatalf("remote mode must not remap to mp_r_*: %q", sc)
+		t.Fatalf("panel cookie missing: %q", sc)
 	}
 }

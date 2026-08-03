@@ -50,10 +50,10 @@ Agent ──WebSocket+HMAC──▶ Master /agent/ws
 │   │   ├── registry.go          在线 Session + Stats 字段
 │   │   ├── stats.go             经 smux 拉 HostStats
 │   │   ├── install.go           /agent.sh、/agent.bin、install-command
-│   │   ├── switch.go            /__mp/go/{id}、/__mp/local（写 mp_node）
+│   │   ├── cookies.go           mp_l_* 本机暂存 / 会话交换
+│   │   ├── switch.go            /__mp/go/{id}、/__mp/local（预热登录+交换 Cookie）
 │   │   ├── token.go             Token 轮换
 │   │   ├── inject.go            侧栏节点切换 Hook
-│   │   ├── cookies.go           mp_r_* Cookie 隔离
 │   │   ├── ui.go                /__mp/ 管理页 + /api/agents
 │   │   └── uninstall.go         Clean / Uninstall
 │   ├── panel/                   1Panel CLI / 登录 / 加密（不读 core.db）

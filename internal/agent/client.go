@@ -248,7 +248,7 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	req.Host = panelURL.Host
 	c.applyEntrance(req.Header)
 
-	// 浏览器尚未带远端会话时，注入自动登录 Cookie，并把会话回写给浏览器（经 Master 变成 mp_r_*）。
+	// 浏览器尚未带会话时注入自动登录 Cookie，并经响应 Set-Cookie 回写浏览器。
 	var injected []*http.Cookie
 	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
 		injected = c.getSessionCookies()
@@ -407,7 +407,7 @@ func alignRequestCSRF(h http.Header) {
 	h.Set("X-CSRF-Token", csrf)
 }
 
-// appendSessionSetCookies 把自动登录得到的会话 Cookie 写回响应，供浏览器存为 mp_r_*。
+// appendSessionSetCookies 把自动登录得到的会话 Cookie 写回响应，供浏览器保存。
 func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie) {
 	if len(cookies) == 0 {
 		return
@@ -448,7 +448,7 @@ func cookieValueFromHeader(header, name string) string {
 	return ""
 }
 
-// cookieHeaderHasName 判断 Cookie 头是否含有指定名称（不会误匹配 mp_r_psession）。
+// cookieHeaderHasName 判断 Cookie 头是否含有指定名称。
 func cookieHeaderHasName(header, name string) bool {
 	return cookieValueFromHeader(header, name) != ""
 }

@@ -89,15 +89,6 @@ func (s *Server) warmAgentSession(sess *Session) ([]*http.Cookie, error) {
 	_, _ = io.Copy(io.Discard, protocol.NewChunkReader(stream))
 
 	cookies := parseSetCookies(respMeta.Headers["Set-Cookie"])
-	if len(cookies) == 0 {
-		// 兼容：Agent 可能把会话写在非 canonical 键上
-		for k, vals := range respMeta.Headers {
-			if strings.EqualFold(k, "Set-Cookie") {
-				cookies = parseSetCookies(vals)
-				break
-			}
-		}
-	}
 	hasSession := false
 	for _, c := range cookies {
 		if strings.EqualFold(c.Name, "psession") && c.Value != "" {

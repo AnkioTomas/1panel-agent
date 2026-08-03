@@ -23,13 +23,12 @@ type LoginResult struct {
 
 // loginBody 对应 1Panel v2 登录 API 请求体。
 type loginBody struct {
-	Name          string `json:"name"`
-	Password      string `json:"password"`
-	IgnoreCaptcha bool   `json:"ignoreCaptcha"`
-	Captcha       string `json:"captcha"`
-	CaptchaID     string `json:"captchaID"`
-	AuthMethod    string `json:"authMethod"`
-	Language      string `json:"language"`
+	Name       string `json:"name"`
+	Password   string `json:"password"`
+	Captcha    string `json:"captcha"`
+	CaptchaID  string `json:"captchaID"`
+	AuthMethod string `json:"authMethod"`
+	Language   string `json:"language"`
 }
 
 // apiResp 是 1Panel JSON API 的通用响应外壳。
@@ -46,10 +45,8 @@ func Login(panelBase, entrance, username, password string) (*LoginResult, error)
 
 // LoginWithClient 允许自定义 HTTP 客户端与可选公钥 PEM（隧道场景）。
 //
-// 1Panel ≥v2.0.14 不再信任 ignoreCaptcha：同一源 IP 登录失败后会强制验证码。
-// Agent 连本机 127.0.0.1 时，失败几次就会把 loopback 锁死。
-// 对策：对 loopback 目标使用 127.0.0.0/8 随机源地址拨号（Linux 合法），
-// 每次登录落到干净的 IPTracker 桶；遇 ErrCaptchaCode 再换源重试。
+// 1Panel ≥v2.0.14 会按源 IP 强制验证码。Agent 连本机 loopback 时，
+// 用 127.0.0.0/8 随机源地址拨号，避开已被锁定的 127.0.0.1 桶；遇验证码错误再换源重试。
 func LoginWithClient(client *http.Client, panelBase, entrance, username, password, publicKeyPEM string) (*LoginResult, error) {
 	base := strings.TrimRight(panelBase, "/")
 	loopback := hostIsLoopback(base)
@@ -140,13 +137,12 @@ func loginOnce(c *http.Client, base, entrance, username, password, publicKeyPEM 
 	}
 
 	body, _ := json.Marshal(loginBody{
-		Name:          username,
-		Password:      enc,
-		IgnoreCaptcha: true, // 旧版仍认；新版忽略，改靠源 IP 隔离
-		Captcha:       "",
-		CaptchaID:     "mp",
-		AuthMethod:    "session",
-		Language:      "zh",
+		Name:       username,
+		Password:   enc,
+		Captcha:    "",
+		CaptchaID:  "",
+		AuthMethod: "session",
+		Language:   "zh",
 	})
 	req, err := http.NewRequest(http.MethodPost, base+"/api/v2/core/auth/login", bytes.NewReader(body))
 	if err != nil {

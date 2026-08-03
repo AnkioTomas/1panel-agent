@@ -205,7 +205,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	delete(headers, "Host")
 	// http.Header keys are canonical; force identity encoding for HTML injection.
 	delete(headers, "Accept-Encoding")
-	// Keep local psession intact; use mp_r_* cookies for the agent panel.
+	// 切换后浏览器 psession 已是远端会话，原样转发。
 	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{
 		Type:    protocol.StreamTypeHTTP,
@@ -251,7 +251,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
 		respBody = s.injectHookHTML(respBody, s.displayHost(r))
 	}
-	rewriteSetCookieForRemote(respMeta.Headers)
+	normalizeRemoteSetCookies(respMeta.Headers)
 
 	h := w.Header()
 	for k, vals := range respMeta.Headers {
@@ -300,7 +300,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	rewriteSetCookieForRemote(respMeta.Headers)
+	normalizeRemoteSetCookies(respMeta.Headers)
 	if respMeta.Status != http.StatusSwitchingProtocols {
 		h := w.Header()
 		for k, vals := range respMeta.Headers {
