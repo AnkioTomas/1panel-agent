@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"1panel-agent/internal/config"
@@ -27,6 +29,10 @@ import (
 // Client 封装了 Agent 与 Master 通信并代理本地 1Panel 的客户端结构。
 type Client struct {
 	Cfg *config.Agent
+
+	sessMu      sync.Mutex
+	sessCookies []*http.Cookie
+	sessUntil   time.Time
 }
 
 // Run 启动 Agent 客户端逻辑，维持与 Master 的长连接并处理自动重连。
@@ -137,7 +143,7 @@ func (c *Client) handleStream(stream *smux.Stream) {
 	}
 }
 
-// getSessionCookies 在配置了加密密码时尝试登录本机 1Panel 并返回会话 Cookie。
+// getSessionCookies 在配置了加密密码时登录本机 1Panel，返回会话 Cookie（带短缓存）。
 func (c *Client) getSessionCookies() []*http.Cookie {
 	if c.Cfg.PanelUser == "" {
 		return nil
@@ -146,12 +152,35 @@ func (c *Client) getSessionCookies() []*http.Cookie {
 	if err != nil || pass == "" {
 		return nil
 	}
-	res, err := panel.Login(c.Cfg.PanelURL, "", c.Cfg.PanelUser, pass)
+
+	c.sessMu.Lock()
+	defer c.sessMu.Unlock()
+	if time.Now().Before(c.sessUntil) && len(c.sessCookies) > 0 {
+		return c.sessCookies
+	}
+
+	res, err := panel.Login(c.Cfg.PanelURL, c.Cfg.PanelEntrance, c.Cfg.PanelUser, pass)
 	if err != nil {
 		log.Printf("agent auto-login failed: %v", err)
+		c.sessCookies = nil
+		c.sessUntil = time.Time{}
 		return nil
 	}
-	return res.Cookies
+	c.sessCookies = res.Cookies
+	c.sessUntil = time.Now().Add(10 * time.Minute)
+	log.Printf("agent auto-login ok (cookies=%d entrance=%q)", len(res.Cookies), c.Cfg.PanelEntrance)
+	return c.sessCookies
+}
+
+// applyEntrance 在启用安全入口时注入 EntranceCode 请求头。
+func (c *Client) applyEntrance(h http.Header) {
+	if c.Cfg.PanelEntrance == "" {
+		return
+	}
+	if h.Get("EntranceCode") != "" {
+		return
+	}
+	h.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(c.Cfg.PanelEntrance)))
 }
 
 // handleHTTP 将隧道 HTTP 请求转发到本机 1Panel，并把响应写回流。
@@ -186,9 +215,10 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Del("Accept-Encoding")
 	req.Host = panelURL.Host
+	c.applyEntrance(req.Header)
 
-	// If no psession cookie present in request, inject auto-login session cookies.
-	if req.Header.Get("Cookie") == "" || !strings.Contains(req.Header.Get("Cookie"), "psession=") {
+	// 浏览器尚未带远端会话时，注入自动登录 Cookie。
+	if !cookieHeaderHasName(req.Header.Get("Cookie"), "psession") {
 		for _, cookie := range c.getSessionCookies() {
 			req.AddCookie(cookie)
 		}
@@ -269,6 +299,7 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	}
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Set("Host", host)
+	c.applyEntrance(req.Header)
 
 	if err := req.Write(conn); err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
@@ -322,4 +353,15 @@ func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 		return
 	}
 	_ = protocol.CopyChunks(stream, strings.NewReader(msg))
+}
+
+// cookieHeaderHasName 判断 Cookie 头是否含有指定名称（不会误匹配 mp_r_psession）。
+func cookieHeaderHasName(header, name string) bool {
+	prefix := name + "="
+	for _, part := range strings.Split(header, ";") {
+		if strings.HasPrefix(strings.TrimSpace(part), prefix) {
+			return true
+		}
+	}
+	return false
 }

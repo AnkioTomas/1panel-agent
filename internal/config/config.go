@@ -18,13 +18,14 @@ const (
 )
 
 // Agent 定义了 Agent 节点的配置结构。
-// 隧道身份：Master + Token。面板地址/用户名由 1panel CLI 自动探测；密码经 setpwd 加密存储。
+// 隧道身份：Master + Token。面板地址/用户名/安全入口由 1panel CLI 自动探测；密码经 setpwd 加密存储。
 type Agent struct {
 	ID               string `json:"id"`
 	Master           string `json:"master"` // host:port
 	Token            string `json:"token"`
 	PanelURL         string `json:"panel_url,omitempty"`
 	PanelUser        string `json:"panel_user,omitempty"`
+	PanelEntrance    string `json:"panel_entrance,omitempty"` // 安全入口路径段，自动探测
 	PanelPasswordEnc string `json:"panel_password_enc,omitempty"`
 	// PanelPassword 仅用于兼容旧版明文配置，Load 后会迁移为密文并清空。
 	PanelPassword string `json:"panel_password,omitempty"`

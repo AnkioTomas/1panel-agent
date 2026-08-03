@@ -8,7 +8,7 @@ import (
 	"1panel-agent/internal/panel"
 )
 
-// AutofillPanel 通过 1Panel CLI 填充本机面板 URL 与用户名。
+// AutofillPanel 通过 1Panel CLI 填充本机面板 URL、用户名与安全入口。
 func AutofillPanel(cfg *config.Agent) {
 	st, err := panel.ReadSettings()
 	if err != nil {
@@ -20,7 +20,8 @@ func AutofillPanel(cfg *config.Agent) {
 	if st.UserName != "" {
 		cfg.PanelUser = st.UserName
 	}
-	log.Printf("detected local 1Panel %s user=%s", cfg.PanelURL, cfg.PanelUser)
+	cfg.PanelEntrance = st.SecurityEntrance
+	log.Printf("detected local 1Panel %s user=%s entrance=%s", cfg.PanelURL, cfg.PanelUser, cfg.PanelEntrance)
 }
 
 // SetPassword 加密保存本机 1Panel 密码（供隧道侧自动登录）。
