@@ -51,6 +51,7 @@ func main() {
 	}
 }
 
+// runMaster 启动 Master 服务。
 func runMaster(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("master does not take arguments; use '1pm master set' to configure options")
@@ -62,6 +63,7 @@ func runMaster(args []string) error {
 	return srv.Run()
 }
 
+// runMasterSet 解析并保存 Master 配置。
 func runMasterSet(args []string) error {
 	st, err := config.LoadMasterOrEmpty()
 	if err != nil {
@@ -70,20 +72,6 @@ func runMasterSet(args []string) error {
 	changed := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--host":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--host needs a value")
-			}
-			st.PublicHost = args[i]
-			changed = true
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			st.PanelUser = args[i]
-			changed = true
 		case "--panel-pass":
 			i++
 			if i >= len(args) {
@@ -91,20 +79,7 @@ func runMasterSet(args []string) error {
 			}
 			st.PanelPassword = args[i]
 			changed = true
-		case "--token":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--token needs a value")
-			}
-			st.Token = args[i]
-			changed = true
-		case "--entrance":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--entrance needs a value")
-			}
-			st.Entrance = args[i]
-			changed = true
+
 		default:
 			return fmt.Errorf("unknown master set flag: %s", args[i])
 		}
@@ -120,6 +95,7 @@ func runMasterSet(args []string) error {
 	return nil
 }
 
+// runAgent 处理 agent 子命令（register/set/run/uninstall）。
 func runAgent(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("agent needs subcommand: register|set|run|uninstall")
@@ -146,6 +122,7 @@ func runAgent(args []string) error {
 	}
 }
 
+// runAgentSet 修改 Agent 的面板配置（panel-url, panel-key）。
 func runAgentSet(args []string) error {
 	var panelURL, panelKey string
 	for i := 0; i < len(args); i++ {
@@ -177,6 +154,7 @@ func runAgentSet(args []string) error {
 	return nil
 }
 
+// usage 打印命令行帮助信息。
 func usage() {
 	fmt.Fprintf(os.Stderr, `1pm %s — 1Panel multi-node tunnel (Master + Agent)
 
@@ -196,15 +174,7 @@ Master UI: http://<master>:<panel-port>/__mp/
 `, version)
 }
 
-func hasFlag(args []string, flag string) bool {
-	for _, a := range args {
-		if a == flag {
-			return true
-		}
-	}
-	return false
-}
-
+// fatal 打印错误信息并退出程序。
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	os.Exit(1)
