@@ -20,8 +20,10 @@ const (
 	StreamTypeWS byte = 2
 	// StreamTypeStats 表示 Master 拉取 Agent 主机状态（CPU/内存/版本）。
 	StreamTypeStats byte = 3
-	maxJSONFrame         = 16 << 20
-	maxChunk             = 8 << 20
+	// StreamTypeUpdate 表示 Master 通知 Agent 从本机 /agent.bin 强制更新二进制。
+	StreamTypeUpdate byte = 4
+	maxJSONFrame          = 16 << 20
+	maxChunk              = 8 << 20
 )
 
 // Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。

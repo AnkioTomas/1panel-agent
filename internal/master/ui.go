@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/panel"
 )
 
@@ -39,6 +40,9 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/api/rotate-token":
 		s.handleRotateToken(w, r)
+		return
+	case "/api/force-update":
+		s.handleForceUpdate(w, r)
 		return
 	}
 
@@ -109,7 +113,8 @@ type pageData struct {
 	DeviceIP      string
 	Entrance      string
 	LocalPanel    string
-	MasterVersion string
+	MasterVersion string // 1Panel 版本
+	NodeVersion   string // 1pm 版本
 	Online        int
 }
 
@@ -125,6 +130,7 @@ func (s *Server) renderNodes(w http.ResponseWriter, r *http.Request) {
 		Entrance:      s.Entrance,
 		LocalPanel:    s.LocalPanel,
 		MasterVersion: panel.ReadSystemVersion(),
+		NodeVersion:   buildinfo.Version,
 		Online:        len(agents),
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -341,18 +347,18 @@ tr:last-child td{border-bottom:0}
   </div>
 
   <div class="card">
-    <div class="card-hd"><h2>主节点面板</h2></div>
+    <div class="card-hd"><h2>主节点</h2></div>
     <div class="card-bd">
       <p class="meta" style="margin:0 0 14px">
-        上游 {{.LocalPanel}}
-        · 版本 <strong>{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
+        1pm <strong id="nodeVer">{{if .NodeVersion}}{{.NodeVersion}}{{else}}-{{end}}</strong>
+        · 1Panel <strong>{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
+        · 上游 {{.LocalPanel}}
       </p>
-      <p class="meta" style="margin:0 0 14px">切换远程节点不会覆盖主节点登录态。</p>
       <div class="actions">
         <a class="btn primary-panel" href="/__mp/local">切换回主节点 1Panel</a>
-        {{if .Entrance}}<a class="btn plain" href="/{{.Entrance}}">打开安全入口</a>{{end}}
-        <a class="btn plain" href="/__mp/">刷新本页</a>
+        <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点</button>
       </div>
+      <p class="meta" style="margin:14px 0 0">强制更新会让所有在线子节点从本机拉取最新 1pm 二进制（同安装时 /agent.bin）并重启服务。</p>
     </div>
   </div>
 </div>
@@ -460,6 +466,29 @@ function rotateToken(){
     alert('轮换失败: '+e.message);
   }).finally(()=>{
     btn.disabled=false; btn.textContent='轮换 Token';
+  });
+}
+function forceUpdate(){
+  if(!confirm('将把所有在线子节点更新为当前主节点 1pm 二进制并重启服务。继续？')) return;
+  const btn=document.getElementById('btnForceUpdate');
+  btn.disabled=true; btn.textContent='更新中…';
+  fetch('/__mp/api/force-update',{method:'POST',credentials:'include'}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(data=>{
+    const total=data.total||0, ok=data.ok||0;
+    const fails=(data.results||[]).filter(x=>!x.ok);
+    if(fails.length){
+      const msg=fails.map(x=>(x.name||x.id)+': '+(x.error||'fail')).join('\n');
+      alert('完成 '+ok+'/'+total+'\n失败:\n'+msg);
+    }else{
+      showToast('已同步更新 '+ok+' 个节点');
+    }
+    setTimeout(refreshAgents, 2000);
+  }).catch(e=>{
+    alert('强制更新失败: '+(e&&e.message?e.message:e));
+  }).finally(()=>{
+    btn.disabled=false; btn.textContent='强制更新子节点';
   });
 }
 function displayName(a){

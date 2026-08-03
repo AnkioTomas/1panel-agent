@@ -150,6 +150,8 @@ func (c *Client) handleStream(stream *smux.Stream) {
 		c.handleWS(stream, meta, body)
 	case protocol.StreamTypeStats:
 		c.handleStats(stream, body)
+	case protocol.StreamTypeUpdate:
+		c.handleUpdate(stream, body)
 	default:
 		c.handleHTTP(stream, meta, body)
 	}
