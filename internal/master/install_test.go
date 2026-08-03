@@ -4,31 +4,42 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"1panel-agent/internal/config"
 )
 
 func TestInstallCommand(t *testing.T) {
 	s := &Server{Token: "secret", PublicHost: "10.211.55.14", Listen: ":52045"}
 	r := httptest.NewRequest("GET", "http://10.211.55.14:52045/__mp/", nil)
 	cmd := s.InstallCommand(r)
-	want := `curl -fsSL "http://10.211.55.14:52045/agent.sh?token=secret" | sudo bash`
-	if cmd != want {
-		t.Fatalf("got %q want %q", cmd, want)
+	if !strings.Contains(cmd, "http://10.211.55.14:52045/agent.sh?timestamp=") {
+		t.Fatalf("missing signed url: %q", cmd)
+	}
+	if !strings.Contains(cmd, "&sign=") {
+		t.Fatalf("missing sign: %q", cmd)
+	}
+	if strings.Contains(cmd, "token=secret") {
+		t.Fatalf("raw token must not appear in install curl: %q", cmd)
 	}
 }
 
 func TestAuthorizeAgentDownload(t *testing.T) {
 	s := &Server{Token: "secret"}
-	ok := httptest.NewRequest(http.MethodGet, "/agent.sh?token=secret", nil)
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	sign := config.Sign("secret", ts)
+	ok := httptest.NewRequest(http.MethodGet, "/agent.sh?timestamp="+ts+"&sign="+sign, nil)
 	w := httptest.NewRecorder()
 	if !s.authorizeAgentDownload(w, ok) {
 		t.Fatal("expected authorize")
 	}
-	bad := httptest.NewRequest(http.MethodGet, "/agent.sh?token=wrong", nil)
+	bad := httptest.NewRequest(http.MethodGet, "/agent.sh?token=secret", nil)
 	w = httptest.NewRecorder()
 	if s.authorizeAgentDownload(w, bad) {
-		t.Fatal("expected reject")
+		t.Fatal("raw token must be rejected")
 	}
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status %d", w.Code)
@@ -52,13 +63,22 @@ func TestAgentInstallScript(t *testing.T) {
 	out := buf.String()
 	for _, needle := range []string{
 		"#!/bin/bash",
-		"/agent.bin?token=",
-		"agent register",
+		"sign_query",
+		"/agent.bin?",
+		"agent install",
+		"agent run",
+		"agent setpwd",
 		"1pm-agent.service",
 		"systemctl restart",
 	} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("script missing %q", needle)
 		}
+	}
+	if strings.Contains(out, "agent register") {
+		t.Fatal("systemd must not call agent register")
+	}
+	if strings.Contains(out, "agent.bin?token=") {
+		t.Fatal("agent.bin must use signed query, not raw token")
 	}
 }

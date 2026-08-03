@@ -74,24 +74,22 @@ ExecStart=/usr/local/bin/1pm master
 
 ---
 
-## 1pm agent register
+## 1pm agent install
 
-注册并启动 Agent（一步完成）。
+安装时写入配置（不启动长连接）。面板 URL/用户名由 `1panel user-info` 自动探测。
 
 ```bash
-1pm agent register <master-host>:<port>/<token>
-
-示例：
-1pm agent register 10.211.55.14:52045/abc123def456
+1pm agent install <host:port> <token>
+1pm agent install <host:port>/<token>   # 兼容写法
 ```
 
-格式：支持 `http://`、`https://`、`ws://`、`wss://` 前缀（自动剥除）。
+正常路径由 Master `/agent.sh` 在安装脚本里调用；systemd 只执行 `agent run`。
 
 ---
 
 ## 1pm agent run
 
-用已有配置启动 Agent（需先执行过 register）。
+用已有配置启动 Agent（需先 `agent install`）。
 
 ```bash
 1pm agent run
@@ -99,16 +97,14 @@ ExecStart=/usr/local/bin/1pm master
 
 ---
 
-## 1pm agent set
+## 1pm agent setpwd
 
-修改 Agent 配置。
+设置本机 1Panel 密码（AES-GCM 加密存储，密钥在 `~/.1panel-agent/secret.key`）。
 
 ```bash
-1pm agent set --panel-url <url> [--panel-key <key>]
-
-选项：
-  --panel-url <url>  手动指定本机 1Panel 地址
-  --panel-key <key>  设置 API Key
+1pm agent setpwd --password 'secret'
+PANEL_PASS='secret' 1pm agent setpwd
+1pm agent setpwd   # 交互输入
 ```
 
 ---
@@ -119,3 +115,4 @@ ExecStart=/usr/local/bin/1pm master
 |------|-------------|----------------|
 | Master 状态 | `/var/lib/1pm/master.json` | `~/.1panel-agent/master.json` |
 | Agent 配置 | `~/.1panel-agent/agent.json` | `~/.1panel-agent/agent.json` |
+| Agent 密钥 | `~/.1panel-agent/secret.key` | 同左 |

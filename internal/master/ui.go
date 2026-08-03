@@ -260,7 +260,7 @@ tr:last-child td{border-bottom:0}
         <code id="reg">{{.Register}}</code>
         <button class="btn" type="button" onclick="copyReg()">复制命令</button>
       </div>
-      <p class="meta">Token 自动生成并写入 master.json；轮换后旧 Agent 需重新执行安装命令。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
+      <p class="meta">安装命令使用 HMAC 签名（约 5 分钟有效）；脚本内落盘 Master/Token，systemd 只跑 agent run。轮换 Token 后需重新安装。{{if .Entrance}}安全入口 {{.Entrance}}{{end}}</p>
     </div>
   </div>
 

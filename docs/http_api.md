@@ -4,26 +4,29 @@ Master 对外暴露以下 HTTP 端点（监听在原 1Panel 端口）。
 
 ---
 
-## 公开端点（无需鉴权）
+## 公开端点（HMAC：timestamp + sign）
 
-### GET /agent/ws?token=\<TOKEN\>
+鉴权与 Agent WebSocket 相同：`sign = hex(HMAC-SHA256(token, "timestamp=<unix>"))`，允许 ±5 分钟时钟偏差。**不接受裸 `token=` 查询参数。**
+
+### GET /agent/ws?timestamp=\<ts\>&sign=\<sign\>
 
 Agent WebSocket 接入点。
 
-- 验证 `token` 查询参数
+- 校验 timestamp + sign
 - 升级为 WebSocket，读取 Register 握手包
 - 建立 smux 多路复用会话
 - Agent 掉线时自动从注册表移除
 
-### GET /agent.sh?token=\<TOKEN\>
+### GET /agent.sh?timestamp=\<ts\>&sign=\<sign\>
 
 返回 Agent 安装 shell 脚本（text/plain）。
 
-- 脚本内嵌 Master 地址、Token、目标架构信息
-- Agent 安装脚本会：下载 /agent.bin → 写 systemd 单元 → 启动服务
-- Token 轮换后需重新执行此脚本
+- 脚本内嵌 Master 地址与 Token（仅签名通过后下发）
+- 安装流程：签名下载 /agent.bin → `agent install` 落盘 → systemd `agent run`
+- 可选交互/`PANEL_PASS` 调用 `agent setpwd`（密码加密存储）
+- UI 展示的 curl 命令含当前签名，约 5 分钟过期
 
-### GET /agent.bin?token=\<TOKEN\>
+### GET /agent.bin?timestamp=\<ts\>&sign=\<sign\>
 
 返回 Master 自身的二进制文件（application/octet-stream）。
 
@@ -86,13 +89,13 @@ Agent WebSocket 接入点。
 
 ```json
 {
-  "install": "curl -fsSL \"http://10.211.55.14:52045/agent.sh?token=<新TOKEN>\" | sudo bash"
+  "install": "curl -fsSL \"http://10.211.55.14:52045/agent.sh?timestamp=<ts>&sign=<sig>\" | sudo bash"
 }
 ```
 
 ### GET /__mp/go/{id}
 
-切换到指定 Agent 节点（需设置 `panel-pass`）。
+切换到指定 Agent 节点（写 mp_node Cookie 后重定向）。
 
 - 通过隧道完成远端 1Panel 登录（RSA+AES 加密）
 - 写入 `mp_node` + `mp_r_*` cookies

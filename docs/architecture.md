@@ -40,7 +40,7 @@ Agent ──WebSocket+Token──▶ Master /agent/ws
 │   ├── agent/              Agent 侧逻辑
 │   │   ├── client.go       WebSocket 连接 + smux 流处理（HTTP/WS 双模式）
 │   │   ├── detect.go       自动检测本机 1Panel 地址
-│   │   └── register.go     解析注册目标 + 持久化配置
+│   │   └── install.go      agent install：解析目标并持久化配置
 │   ├── master/             Master 侧逻辑
 │   │   ├── server.go       HTTP 服务器、Agent WS 接入、HTTP/WS 隧道代理
 │   │   ├── auth.go         /__mp/ 鉴权（mp_auth cookie + 本机 1Panel 会话验证）

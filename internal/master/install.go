@@ -1,33 +1,32 @@
 package master
 
 import (
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"text/template"
+	"time"
+
+	"1panel-agent/internal/config"
 )
 
-// authorizeAgentDownload 校验 GET/HEAD，并用 query token 与当前安装 Token 做常量时间比较。
-// /agent.sh 与 /agent.bin 共用；Agent WebSocket 仍走 HMAC（VerifyToken）。
+// authorizeAgentDownload 校验 GET/HEAD，并用 timestamp+sign（与 /agent/ws 相同）鉴权。
 func (s *Server) authorizeAgentDownload(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return false
 	}
-	tok := r.URL.Query().Get("token")
-	secret := s.currentToken()
-	if secret == "" || tok == "" ||
-		subtle.ConstantTimeCompare([]byte(tok), []byte(secret)) != 1 {
+	if !s.VerifyToken(r.URL.Query().Get("timestamp"), r.URL.Query().Get("sign")) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
 	return true
 }
 
-// handleAgentScript 在 Token 校验通过后下发 Agent 安装脚本（/agent.sh）。
+// handleAgentScript 在签名校验通过后下发 Agent 安装脚本（/agent.sh）。
 func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAgentDownload(w, r) {
 		return
@@ -54,7 +53,7 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	_ = agentInstallTmpl.Execute(w, data)
 }
 
-// handleAgentBinary 在 Token 校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
+// handleAgentBinary 在签名校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
 func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAgentDownload(w, r) {
 		return
@@ -83,16 +82,19 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "1pm", st.ModTime(), f)
 }
 
-// InstallCommand 返回管理页展示的一键安装命令。
+// InstallCommand 返回管理页展示的一键安装命令（timestamp+sign，约 5 分钟有效）。
 func (s *Server) InstallCommand(r *http.Request) string {
 	host := s.AdvertiseHost(r)
-	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?token=%s" | sudo bash`, host, s.currentToken())
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	sign := config.Sign(s.currentToken(), ts)
+	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?timestamp=%s&sign=%s" | sudo bash`, host, ts, sign)
 }
 
 // agentInstallTmpl 是 /agent.sh 安装脚本模板。
+// 安装时：签名下载二进制 → agent install 落盘 → systemd 仅执行 agent run。
 var agentInstallTmpl = template.Must(template.New("agent.sh").Parse(strings.TrimSpace(`
 #!/bin/bash
-# 1pm agent bootstrap — idempotent reinstall from Master
+# 1pm agent bootstrap — install-time config, runtime is "agent run"
 set -euo pipefail
 
 MASTER={{printf "%q" .Master}}
@@ -120,14 +122,40 @@ if [[ "$OS" != "$EXPECT_GOOS" || "$ARCH" != "$EXPECT_GOARCH" ]]; then
   echo "warn: continuing anyway; rebuild Master for this arch if the binary fails to run" >&2
 fi
 
+# 与 Master VerifyToken 相同的 HMAC-SHA256(timestamp=<ts>)
+sign_query() {
+  local ts sign
+  ts="$(date +%s)"
+  sign="$(printf 'timestamp=%s' "$ts" | openssl dgst -sha256 -hmac "$TOKEN" 2>/dev/null | awk '{print $NF}')"
+  if [[ -z "$sign" ]]; then
+    echo "error: openssl is required to sign download requests" >&2
+    exit 1
+  fi
+  printf 'timestamp=%s&sign=%s' "$ts" "$sign"
+}
+
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 echo ">> downloading 1pm from ${BASE}"
-curl -fsSL "${BASE}/agent.bin?token=${TOKEN}" -o "$TMP"
+curl -fsSL "${BASE}/agent.bin?$(sign_query)" -o "$TMP"
 chmod 755 "$TMP"
 
 systemctl stop 1pm-agent.service 2>/dev/null || true
 install -m 755 "$TMP" "$BIN_PATH"
+
+echo ">> writing agent config (install-time registration)"
+"$BIN_PATH" agent install "$MASTER" "$TOKEN"
+
+if [[ -t 0 ]]; then
+  echo -n "1Panel password for auto-login (Enter to skip): "
+  read -rs PANEL_PASS || true
+  echo
+  if [[ -n "${PANEL_PASS:-}" ]]; then
+    "$BIN_PATH" agent setpwd --password "$PANEL_PASS"
+  fi
+elif [[ -n "${PANEL_PASS:-}" ]]; then
+  "$BIN_PATH" agent setpwd --password "$PANEL_PASS"
+fi
 
 cat > "$UNIT_PATH" <<EOF
 [Unit]
@@ -138,7 +166,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HOME=/root
-ExecStart=${BIN_PATH} agent register ${MASTER}/${TOKEN}
+ExecStart=${BIN_PATH} agent run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535
@@ -152,5 +180,5 @@ systemctl enable 1pm-agent.service
 systemctl restart 1pm-agent.service
 systemctl --no-pager --full status 1pm-agent.service || true
 echo ">> 1pm agent installed and started (master=${MASTER})"
-echo ">> re-run this curl anytime to reset/reinstall"
+echo ">> re-run this curl anytime to reset/reinstall (signed URL expires ~5 minutes)"
 `) + "\n"))

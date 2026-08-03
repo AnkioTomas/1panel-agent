@@ -6,8 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HOME=/root
-# This unit is written by Master /agent.sh — do not hardcode token here.
-# Install: curl -fsSL "http://<master>:<port>/agent.sh?token=<token>" | sudo bash
+# Install: open Master UI and copy the signed curl (timestamp+sign, ~5 min TTL).
 ExecStart=/usr/local/bin/1pm agent run
 Restart=on-failure
 RestartSec=5

@@ -4,10 +4,7 @@ package agent
 import (
 	"bufio"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -53,7 +50,7 @@ func Run(cfg *config.Agent) error {
 // connectOnce 完成一次鉴权连接、注册与 smux Accept 循环；断开则返回错误。
 func (c *Client) connectOnce() error {
 	if c.Cfg.Master == "" || c.Cfg.Token == "" {
-		return fmt.Errorf("master/token not configured; run agent register first")
+		return fmt.Errorf("master/token not configured; run agent install first")
 	}
 	AutofillPanel(c.Cfg)
 	if c.Cfg.PanelURL == "" {
@@ -61,9 +58,7 @@ func (c *Client) connectOnce() error {
 	}
 
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	mac := hmac.New(sha256.New, []byte(c.Cfg.Token))
-	mac.Write([]byte("timestamp=" + ts))
-	sign := hex.EncodeToString(mac.Sum(nil))
+	sign := config.Sign(c.Cfg.Token, ts)
 
 	wsURL := url.URL{
 		Scheme:   "ws",
@@ -142,12 +137,16 @@ func (c *Client) handleStream(stream *smux.Stream) {
 	}
 }
 
-// getSessionCookies 在配置了账号密码时尝试登录本机 1Panel 并返回会话 Cookie。
+// getSessionCookies 在配置了加密密码时尝试登录本机 1Panel 并返回会话 Cookie。
 func (c *Client) getSessionCookies() []*http.Cookie {
-	if c.Cfg.PanelUser == "" || c.Cfg.PanelPassword == "" {
+	if c.Cfg.PanelUser == "" {
 		return nil
 	}
-	res, err := panel.Login(c.Cfg.PanelURL, "", c.Cfg.PanelUser, c.Cfg.PanelPassword)
+	pass, err := c.Cfg.PanelPasswordPlain()
+	if err != nil || pass == "" {
+		return nil
+	}
+	res, err := panel.Login(c.Cfg.PanelURL, "", c.Cfg.PanelUser, pass)
 	if err != nil {
 		log.Printf("agent auto-login failed: %v", err)
 		return nil
@@ -187,7 +186,6 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Del("Accept-Encoding")
 	req.Host = panelURL.Host
-	panel.InjectAuth(req.Header, c.Cfg.PanelKey)
 
 	// If no psession cookie present in request, inject auto-login session cookies.
 	if req.Header.Get("Cookie") == "" || !strings.Contains(req.Header.Get("Cookie"), "psession=") {
@@ -271,7 +269,6 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	}
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Set("Host", host)
-	panel.InjectAuth(req.Header, c.Cfg.PanelKey)
 
 	if err := req.Write(conn); err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())

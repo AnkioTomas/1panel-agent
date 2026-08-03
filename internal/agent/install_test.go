@@ -2,7 +2,7 @@ package agent
 
 import "testing"
 
-func TestParseRegisterTarget(t *testing.T) {
+func TestParseInstallTarget(t *testing.T) {
 	tests := []struct {
 		in         string
 		wantMaster string
@@ -17,7 +17,7 @@ func TestParseRegisterTarget(t *testing.T) {
 		{"/token", "", "", true},
 	}
 	for _, tt := range tests {
-		m, tok, err := ParseRegisterTarget(tt.in)
+		m, tok, err := ParseInstallTarget(tt.in)
 		if tt.wantErr {
 			if err == nil {
 				t.Fatalf("%q: expected error", tt.in)

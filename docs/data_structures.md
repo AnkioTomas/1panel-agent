@@ -6,11 +6,12 @@
 
 ```go
 type Agent struct {
-    ID       string // 节点唯一标识，8 字节随机 hex，首次 Save 自动生成
-    Master   string // Master 地址，格式 host:port
-    Token    string // 接入令牌
-    PanelURL string // 本机 1Panel 地址，默认 http://127.0.0.1:20560，自动检测
-    PanelKey string // 可选 API Key，注入 X-Panel-Key 请求头
+    ID               string // 节点唯一标识，首次 Save 自动生成
+    Master           string // Master 地址 host:port
+    Token            string // 隧道 HMAC 密钥（安装时写入）
+    PanelURL         string // 本机 1Panel 地址，CLI 自动探测
+    PanelUser        string // 面板用户名，CLI 自动探测
+    PanelPasswordEnc string // 面板密码密文（agent setpwd）
 }
 ```
 
@@ -20,13 +21,10 @@ type Agent struct {
 
 ```go
 type Master struct {
-    Token         string // 隧道接入令牌，自动生成，UI 可轮换
-    OriginalPort  int    // takeover 前 1Panel 原始端口
-    InternalPort  int    // 1Panel 迁移后的内部端口（仅 127.0.0.1 监听）
-    Entrance      string // 1Panel 安全入口路径（如 "myentrance"）
-    PanelUser     string // 面板用户名（从 1pctl user-info 读取，不存密码）
-    PanelPassword string // 面板密码（仅用于节点切换自动登录）
-    PublicHost    string // NAT 公网地址覆盖，默认用 HTTP Host 头
+    Token        string // 隧道 HMAC 密钥，自动生成，UI 可轮换
+    OriginalPort int    // takeover 前 1Panel 原始端口
+    InternalPort int    // 1Panel 迁移后的内部端口（仅 127.0.0.1 监听）
+    PublicHost   string // NAT 公网地址覆盖，默认用 HTTP Host 头
 }
 ```
 

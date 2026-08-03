@@ -23,7 +23,7 @@ Master 启动时默认执行 takeover：
 ```
 Agent                           Master
   │                               │
-  │──── WebSocket /agent/ws?token=<T> ──▶│  验证 Token
+  │──── WebSocket /agent/ws?timestamp=&sign= ──▶│  验证 HMAC
   │                               │
   │◀─── 等待 Register JSON ───────│
   │──── Register{ID,Hostname,PanelURL,PanelVersion} ──▶│

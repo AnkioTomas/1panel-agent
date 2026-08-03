@@ -77,18 +77,18 @@ systemd 示例：[`deploy/systemd/1pm-master.service`](deploy/systemd/1pm-master
 ## Agent（推荐从 Master 一键安装）
 
 ```bash
-# 管理页「子节点安装命令」一键复制（含当前 Token）
-curl -fsSL "http://10.211.55.14:52045/agent.sh?token=<TOKEN>" | sudo bash
+# 管理页复制「子节点安装命令」（HMAC 签名，约 5 分钟有效）
+curl -fsSL "http://10.211.55.14:52045/agent.sh?timestamp=<ts>&sign=<sig>" | sudo bash
 ```
 
-脚本会下载 Master 同款 `1pm`、写入 systemd 并启动。轮换 Token 后旧 Agent 需重新执行上述命令。
+脚本会：签名下载二进制 → `agent install` 落盘 Master/Token → systemd 执行 `agent run`。轮换 Token 后需重新安装。
 
-systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)（由安装脚本生成，勿硬编码 token）
+systemd 示例：[`deploy/systemd/1pm-agent.service`](deploy/systemd/1pm-agent.service)（由安装脚本生成）
 
 ## 使用
 
 1. 打开 `http://master:端口/__mp/`
-2. 复制「子节点注册命令」到 Agent 机器执行（`curl … | sudo bash`）
+2. 复制「子节点安装命令」到 Agent 机器执行（`curl … | sudo bash`）
 3. 列表出现节点后点「进入面板」——Master 经隧道登录子节点；远程会话存在 `mp_r_*` cookie，**不会覆盖**本机 `psession`
 4. 点「切换回主节点 1Panel」只清除 `mp_node`，主节点登录态保留，无需重新登录
 

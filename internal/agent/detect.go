@@ -8,7 +8,7 @@ import (
 	"1panel-agent/internal/panel"
 )
 
-// AutofillPanel 尝试通过 1Panel CLI 读取本地 1Panel 端口并自动填充到配置中。
+// AutofillPanel 通过 1Panel CLI 填充本机面板 URL 与用户名。
 func AutofillPanel(cfg *config.Agent) {
 	st, err := panel.ReadSettings()
 	if err != nil {
@@ -17,30 +17,27 @@ func AutofillPanel(cfg *config.Agent) {
 	if cfg.PanelURL == "" || cfg.PanelURL == config.DefaultPanelURL {
 		cfg.PanelURL = panel.LocalPanelURL(st.ServerPort)
 	}
-	log.Printf("detected local 1Panel %s", cfg.PanelURL)
+	if st.UserName != "" {
+		cfg.PanelUser = st.UserName
+	}
+	log.Printf("detected local 1Panel %s user=%s", cfg.PanelURL, cfg.PanelUser)
 }
 
-// SetPanel 更新并保存 Agent 的面板配置（URL、Key、User、Password）。
-func SetPanel(panelURL, panelKey, panelUser, panelPassword string) error {
+// SetPassword 加密保存本机 1Panel 密码（供隧道侧自动登录）。
+func SetPassword(plain string) error {
+	if plain == "" {
+		return fmt.Errorf("password required")
+	}
 	cfg, err := config.LoadOrEmpty()
 	if err != nil {
 		return err
 	}
 	AutofillPanel(cfg)
-	if panelURL != "" {
-		cfg.PanelURL = panelURL
+	enc, err := config.EncryptSecret(plain)
+	if err != nil {
+		return err
 	}
-	if panelKey != "" {
-		cfg.PanelKey = panelKey
-	}
-	if panelUser != "" {
-		cfg.PanelUser = panelUser
-	}
-	if panelPassword != "" {
-		cfg.PanelPassword = panelPassword
-	}
-	if cfg.PanelURL == "" {
-		return fmt.Errorf("panel-url required")
-	}
+	cfg.PanelPasswordEnc = enc
+	cfg.PanelPassword = ""
 	return config.Save(cfg)
 }

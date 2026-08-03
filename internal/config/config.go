@@ -1,4 +1,3 @@
-// Package config 负责 Agent/Master 配置的路径、读写与 Token 生成。
 package config
 
 import (
@@ -19,13 +18,15 @@ const (
 )
 
 // Agent 定义了 Agent 节点的配置结构。
+// 隧道身份：Master + Token。面板地址/用户名由 1panel CLI 自动探测；密码经 setpwd 加密存储。
 type Agent struct {
-	ID            string `json:"id"`
-	Master        string `json:"master"` // host:port
-	Token         string `json:"token"`
-	PanelURL      string `json:"panel_url"`
-	PanelKey      string `json:"panel_key,omitempty"`
-	PanelUser     string `json:"panel_user,omitempty"`
+	ID               string `json:"id"`
+	Master           string `json:"master"` // host:port
+	Token            string `json:"token"`
+	PanelURL         string `json:"panel_url,omitempty"`
+	PanelUser        string `json:"panel_user,omitempty"`
+	PanelPasswordEnc string `json:"panel_password_enc,omitempty"`
+	// PanelPassword 仅用于兼容旧版明文配置，Load 后会迁移为密文并清空。
 	PanelPassword string `json:"panel_password,omitempty"`
 }
 
@@ -47,7 +48,7 @@ func Path() (string, error) {
 	return filepath.Join(dir, fileName), nil
 }
 
-// Load 从磁盘读取并解析 Agent 配置。
+// Load 从磁盘读取并解析 Agent 配置；必要时迁移明文密码。
 func Load() (*Agent, error) {
 	path, err := Path()
 	if err != nil {
@@ -64,10 +65,27 @@ func Load() (*Agent, error) {
 	if cfg.PanelURL == "" {
 		cfg.PanelURL = DefaultPanelURL
 	}
+	if err := migratePassword(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
-// Save 将 Agent 配置序列化并保存至磁盘。
+// migratePassword 将旧版明文 panel_password 加密落盘。
+func migratePassword(cfg *Agent) error {
+	if cfg.PanelPassword == "" || cfg.PanelPasswordEnc != "" {
+		return nil
+	}
+	enc, err := EncryptSecret(cfg.PanelPassword)
+	if err != nil {
+		return err
+	}
+	cfg.PanelPasswordEnc = enc
+	cfg.PanelPassword = ""
+	return Save(cfg)
+}
+
+// Save 将 Agent 配置序列化并保存至磁盘（永不写回明文密码）。
 func Save(cfg *Agent) error {
 	if cfg.ID == "" {
 		id, err := newID()
@@ -79,6 +97,7 @@ func Save(cfg *Agent) error {
 	if cfg.PanelURL == "" {
 		cfg.PanelURL = DefaultPanelURL
 	}
+	cfg.PanelPassword = "" // 强制不落明文
 	dir, err := Dir()
 	if err != nil {
 		return err
@@ -107,6 +126,14 @@ func LoadOrEmpty() (*Agent, error) {
 		return &Agent{PanelURL: DefaultPanelURL}, nil
 	}
 	return nil, err
+}
+
+// PanelPasswordPlain 返回解密后的面板密码；未设置则返回空串。
+func (cfg *Agent) PanelPasswordPlain() (string, error) {
+	if cfg.PanelPasswordEnc == "" {
+		return "", nil
+	}
+	return DecryptSecret(cfg.PanelPasswordEnc)
 }
 
 // newID 随机生成 16 进制字符串作为 Agent 节点 ID。

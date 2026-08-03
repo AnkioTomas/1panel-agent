@@ -7,6 +7,8 @@ import (
 	"1panel-agent/internal/agent"
 	"1panel-agent/internal/config"
 	"1panel-agent/internal/master"
+
+	"golang.org/x/term"
 )
 
 // Set by release builds: -ldflags "-X main.version=v1.2.3"
@@ -58,26 +60,23 @@ func runMaster(args []string) error {
 	return srv.Run()
 }
 
-// runAgent 处理 agent 子命令（register/set/run/uninstall）。
+// runAgent 处理 agent 子命令（install/run/setpwd/uninstall）。
 func runAgent(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("agent needs subcommand: register|set|run|uninstall")
+		return fmt.Errorf("agent needs subcommand: install|run|setpwd|uninstall")
 	}
 	switch args[0] {
-	case "register":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: agent register host:port/token")
-		}
-		return agent.RegisterAndRun(args[1])
-	case "set":
-		return runAgentSet(args[1:])
+	case "install":
+		return runAgentInstall(args[1:])
 	case "run":
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("load config: %w (run agent register first)", err)
+			return fmt.Errorf("load config: %w (run agent install first)", err)
 		}
 		agent.AutofillPanel(cfg)
 		return agent.Run(cfg)
+	case "setpwd":
+		return runAgentSetpwd(args[1:])
 	case "uninstall":
 		return agent.Uninstall()
 	default:
@@ -85,47 +84,52 @@ func runAgent(args []string) error {
 	}
 }
 
-// runAgentSet 修改 Agent 的面板配置（panel-url, panel-key, panel-pass, panel-user）。
-func runAgentSet(args []string) error {
-	var panelURL, panelKey, panelUser, panelPassword string
+// runAgentInstall 安装时写入 Master/Token（不启动长连接）。
+func runAgentInstall(args []string) error {
+	switch len(args) {
+	case 1:
+		return agent.InstallFromTarget(args[0])
+	case 2:
+		return agent.Install(args[0], args[1])
+	default:
+		return fmt.Errorf("usage: agent install <host:port> <token> | agent install host:port/token")
+	}
+}
+
+// runAgentSetpwd 交互或参数设置加密保存的面板密码。
+func runAgentSetpwd(args []string) error {
+	var pass string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--panel-url":
+		case "--password":
 			i++
 			if i >= len(args) {
-				return fmt.Errorf("--panel-url needs a value")
+				return fmt.Errorf("--password needs a value")
 			}
-			panelURL = args[i]
-		case "--panel-key":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-key needs a value")
-			}
-			panelKey = args[i]
-		case "--panel-user":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-user needs a value")
-			}
-			panelUser = args[i]
-		case "--panel-pass":
-			i++
-			if i >= len(args) {
-				return fmt.Errorf("--panel-pass needs a value")
-			}
-			panelPassword = args[i]
+			pass = args[i]
 		default:
-			return fmt.Errorf("unknown set flag: %s", args[i])
+			return fmt.Errorf("unknown setpwd flag: %s", args[i])
 		}
 	}
-	if panelURL == "" && panelKey == "" && panelUser == "" && panelPassword == "" {
-		return fmt.Errorf("usage: agent set [--panel-url URL] [--panel-key KEY] [--panel-pass PASS] [--panel-user USER]")
+	if pass == "" {
+		if v := os.Getenv("PANEL_PASS"); v != "" {
+			pass = v
+		}
 	}
-	if err := agent.SetPanel(panelURL, panelKey, panelUser, panelPassword); err != nil {
+	if pass == "" {
+		fmt.Fprint(os.Stderr, "1Panel password: ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return err
+		}
+		pass = string(b)
+	}
+	if err := agent.SetPassword(pass); err != nil {
 		return err
 	}
 	path, _ := config.Path()
-	fmt.Printf("config saved: %s\n", path)
+	fmt.Printf("password saved (encrypted) to %s\n", path)
 	return nil
 }
 
@@ -134,17 +138,19 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `1pm %s — 1Panel multi-node tunnel (Master + Agent)
 
 Usage:
-  1pm master                          start master (systemd: ExecStart=/usr/local/bin/1pm master)
+  1pm master                          start master
   1pm master uninstall                stop service, restore 1Panel port, remove state & binary
 
-  1pm agent register host:port/token  register and start agent
+  1pm agent install <host:port> <token>
+                                      write config at install time (panel URL/user auto-detected)
   1pm agent run                       start agent with saved config
+  1pm agent setpwd [--password PASS]  set 1Panel password (encrypted at rest)
   1pm agent uninstall                 stop service, remove config & binary
 
   1pm version
 
 Master UI: http://<master>:<panel-port>/__mp/
-  Auth = transparent proxy (no password stored by 1pm).
+  Agent download / WS auth = HMAC timestamp+sign (not raw token query).
 `, version)
 }
 

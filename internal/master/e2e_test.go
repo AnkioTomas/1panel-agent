@@ -92,7 +92,6 @@ echo 'User: testuser'
 		Master:   masterAddr,
 		Token:    token,
 		PanelURL: panel.URL,
-		PanelKey: "panel-secret",
 	}
 	if err := config.Save(cfg); err != nil {
 		t.Fatal(err)
@@ -134,9 +133,6 @@ echo 'User: testuser'
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 || string(body) != "panel-ok" {
 		t.Fatalf("proxy status=%d body=%q", resp.StatusCode, body)
-	}
-	if resp.Header.Get("X-Echo-Auth") == "" {
-		t.Fatal("expected injected 1Panel-Token to reach panel")
 	}
 	sc := resp.Header.Get("Set-Cookie")
 	if !strings.Contains(sc, "mp_r_psession=") {
