@@ -19,9 +19,6 @@ func EnsureTakeover(state *config.Master) (publicPort, internalPort int, entranc
 		return 0, 0, "", fmt.Errorf("read 1panel settings: %w", err)
 	}
 	entrance = st.SecurityEntrance
-	if state.Entrance != "" {
-		entrance = state.Entrance
-	}
 
 	if state.OriginalPort > 0 && state.InternalPort > 0 {
 		publicPort = state.OriginalPort
@@ -37,7 +34,7 @@ func EnsureTakeover(state *config.Master) (publicPort, internalPort int, entranc
 		publicPort = st.ServerPort
 		internalPort = panel.InternalPort(publicPort)
 		if internalPort < 1 || internalPort > 65535 {
-			return 0, 0, "", fmt.Errorf("cannot derive a valid internal port from public port %d (got %d); set --upstream manually", publicPort, internalPort)
+			return 0, 0, "", fmt.Errorf("cannot derive a valid internal port from public port %d (got %d)", publicPort, internalPort)
 		}
 		if st.ServerPort != internalPort {
 			log.Printf("takeover: move 1Panel %d -> 127.0.0.1:%d", publicPort, internalPort)
@@ -50,7 +47,6 @@ func EnsureTakeover(state *config.Master) (publicPort, internalPort int, entranc
 		}
 		state.OriginalPort = publicPort
 		state.InternalPort = internalPort
-		state.Entrance = entrance
 		if err := config.SaveMaster(state); err != nil {
 			log.Printf("warn: save master state: %v", err)
 		}

@@ -85,7 +85,7 @@ func runMasterSet(args []string) error {
 		}
 	}
 	if !changed {
-		return fmt.Errorf("usage: 1pm master set [--host IP] [--panel-pass P] [--panel-user U] [--token T] [--entrance E]")
+		return fmt.Errorf("usage: 1pm master set --panel-pass P")
 	}
 	if err := config.SaveMaster(st); err != nil {
 		return err

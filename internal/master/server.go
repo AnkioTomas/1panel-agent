@@ -41,21 +41,12 @@ func New() (*Server, error) {
 	}
 	dirty := false
 
-	entrance := state.Entrance
+	var entrance, panelUser string
 
-	// Sync username/entrance from 1panel CLI (never open core.db).
+	// Sync username/entrance dynamically from 1panel CLI.
 	if st, err := panel.ReadSettings(); err == nil {
-		if st.UserName != "" && state.PanelUser != st.UserName {
-			state.PanelUser = st.UserName
-			dirty = true
-		}
-		if st.SecurityEntrance != "" {
-			entrance = st.SecurityEntrance
-			if state.Entrance != entrance {
-				state.Entrance = entrance
-				dirty = true
-			}
-		}
+		panelUser = st.UserName
+		entrance = st.SecurityEntrance
 	}
 
 	pub, internal, ent, err := EnsureTakeover(state)
@@ -65,7 +56,6 @@ func New() (*Server, error) {
 		entrance = ent
 		listen = fmt.Sprintf(":%d", pub)
 		localPanel = panel.LocalPanelURL(internal)
-		dirty = true
 	} else if state.InternalPort > 0 {
 		localPanel = panel.LocalPanelURL(state.InternalPort)
 	}
@@ -91,7 +81,7 @@ func New() (*Server, error) {
 		Token:      state.Token,
 		PublicHost: state.PublicHost,
 		Entrance:   entrance,
-		PanelUser:  state.PanelUser,
+		PanelUser:  panelUser,
 		PanelPass:  state.PanelPassword,
 		LocalPanel: localPanel,
 		reg:        NewRegistry(),
