@@ -14,7 +14,9 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.tokenOK(r.URL.Query().Get("token")) {
+	ts := r.URL.Query().Get("timestamp")
+	sign := r.URL.Query().Get("sign")
+	if !s.VerifyToken(ts, sign) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -46,7 +48,9 @@ func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.tokenOK(r.URL.Query().Get("token")) {
+	ts := r.URL.Query().Get("timestamp")
+	sign := r.URL.Query().Get("sign")
+	if !s.VerifyToken(ts, sign) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

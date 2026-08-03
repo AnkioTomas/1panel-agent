@@ -22,15 +22,16 @@ import (
 )
 
 type Server struct {
-	Listen     string
-	Token      string
-	PublicHost string
-	Entrance   string
-	PanelUser  string
-	LocalPanel string // http://127.0.0.1:internal
-	reg        *Registry
-	localProxy *httputil.ReverseProxy
-	tokenMu    sync.RWMutex
+	Listen        string
+	Token         string
+	PublicHost    string
+	Entrance      string
+	PanelUser     string
+	LocalPanel    string // http://127.0.0.1:internal
+	sessionSecret string // 内存随机生成的 Web Session Secret（绝不上盘）
+	reg           *Registry
+	localProxy    *httputil.ReverseProxy
+	tokenMu       sync.RWMutex
 }
 
 func New() (*Server, error) {
@@ -120,16 +121,13 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		s.localProxy.ServeHTTP(w, r)
 		return
 	}
-	if r.URL.Path == "/" {
-		http.Redirect(w, r, "/__mp/", http.StatusFound)
-		return
-	}
 	http.NotFound(w, r)
 }
 
 func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
-	if !s.tokenOK(token) {
+	ts := r.URL.Query().Get("timestamp")
+	sign := r.URL.Query().Get("sign")
+	if !s.VerifyToken(ts, sign) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

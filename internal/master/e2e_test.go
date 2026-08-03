@@ -21,6 +21,11 @@ import (
 
 func TestTunnelProxy(t *testing.T) {
 	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/dashboard/base/os" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"code":200}`)
+			return
+		}
 		if r.URL.Path != "/hello" {
 			http.NotFound(w, r)
 			return
@@ -66,7 +71,7 @@ echo 'User: testuser'
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.LocalPanel = ""
+	srv.LocalPanel = panel.URL
 	masterAddr := srv.Listen
 	if strings.HasPrefix(masterAddr, ":") {
 		masterAddr = "127.0.0.1" + masterAddr

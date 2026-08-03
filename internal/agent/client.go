@@ -3,7 +3,10 @@ package agent
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,11 +58,16 @@ func (c *Client) connectOnce() error {
 		c.Cfg.PanelURL = config.DefaultPanelURL
 	}
 
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	mac := hmac.New(sha256.New, []byte(c.Cfg.Token))
+	mac.Write([]byte("timestamp=" + ts))
+	sign := hex.EncodeToString(mac.Sum(nil))
+
 	wsURL := url.URL{
 		Scheme:   "ws",
 		Host:     c.Cfg.Master,
 		Path:     "/agent/ws",
-		RawQuery: "token=" + url.QueryEscape(c.Cfg.Token),
+		RawQuery: fmt.Sprintf("timestamp=%s&sign=%s", ts, sign),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
