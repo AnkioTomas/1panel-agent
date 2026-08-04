@@ -59,7 +59,7 @@ Takeover 与 Agent 代理会争同一面板端口与职责。安装脚本与 `ro
 
 ## 11. 继承面板 SSL（不读 core.db）
 
-用户在 1Panel 开启面板证书后，文件落在 `{BASE_DIR}/1panel/secret/server.crt|.key`（1pctl 默认 `BASE_DIR=/opt`，即 `/opt/1panel/secret/`）；关闭 SSL 会删除这两个文件。
+用户在 1Panel 开启面板证书后，文件落在 `{BASE_DIR}/1panel/secret/server.crt|.key`。`BASE_DIR` 以 `1pctl` 脚本中的 `BASE_DIR=` 为准（安装时可改，默认 `/opt`）；可用环境变量 `ONEPANEL_BASE_DIR` 覆盖。关闭 SSL 会删除这两个文件。
 
 Master：
 

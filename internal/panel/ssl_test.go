@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,12 +82,35 @@ func TestLoadPanelTLSMissing(t *testing.T) {
 
 func TestSecretDirDefault(t *testing.T) {
 	SetSecretDirForTest("")
-	t.Setenv("ONEPANEL_BASE_DIR", "")
-	if got := SecretDir(); got != "/opt/1panel/secret" {
-		t.Fatalf("default SecretDir=%q", got)
-	}
+	t.Cleanup(func() { SetSecretDirForTest("") })
+	ResetBaseDirForTest()
+	t.Cleanup(ResetBaseDirForTest)
+
 	t.Setenv("ONEPANEL_BASE_DIR", "/data")
 	if got := SecretDir(); got != "/data/1panel/secret" {
 		t.Fatalf("env SecretDir=%q", got)
+	}
+
+	t.Setenv("ONEPANEL_BASE_DIR", "")
+	ResetBaseDirForTest()
+	// 无 1pctl / 无环境变量时回落 /opt（与官方默认一致）
+	if got := BaseDir(); got == "" {
+		t.Fatal("BaseDir empty")
+	}
+	if got := SecretDir(); !strings.HasSuffix(got, "/1panel/secret") {
+		t.Fatalf("SecretDir=%q", got)
+	}
+}
+
+func TestParse1pctlBaseDir(t *testing.T) {
+	in := "#!/bin/bash\n# comment\nBASE_DIR=/data/disk1\nORIGINAL_PORT=52045\n"
+	if got := parse1pctlBaseDir(strings.NewReader(in)); got != "/data/disk1" {
+		t.Fatalf("got %q", got)
+	}
+	if got := parse1pctlBaseDir(strings.NewReader("BASE_DIR=\"/opt\"\n")); got != "/opt" {
+		t.Fatalf("quoted got %q", got)
+	}
+	if got := parse1pctlBaseDir(strings.NewReader("FOO=1\n")); got != "" {
+		t.Fatalf("empty expected, got %q", got)
 	}
 }

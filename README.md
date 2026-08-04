@@ -91,7 +91,7 @@ Agent ── WebSocket + HMAC ──▶ Master
 - Linux（systemd），`amd64` / `arm64`  
 - 本机已安装并初始化 [1Panel](https://1panel.cn)（需 `1pctl` / `1panel`）  
 - Master 与 Agent **各占一台机器**（禁止同机双角色）  
-- Agent 需能访问 Master 的面板端口（HTTP；若在 1Panel 开启了面板 SSL，则为 HTTPS / wss，证书继承自 `/opt/1panel/secret`）  
+- Agent 需能访问 Master 的面板端口（HTTP；若在 1Panel 开启了面板 SSL，则为 HTTPS / wss，证书继承自 `{1pctl BASE_DIR}/1panel/secret`）  
 
 ---
 

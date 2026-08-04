@@ -502,7 +502,7 @@ tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font
         <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点 1pm</button>
         <button class="btn plain" type="button" id="btnUpgradePanel" onclick="upgradePanel()">更新子节点 1Panel</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">1pm：先「更新主节点」再「强制更新子节点 1pm」。1Panel：Agent 自动登录后调用官方升级 API（已最新则跳过）。面板开启 SSL 后 Master 自动继承 <code>/opt/1panel/secret</code> 证书（HTTP→HTTPS）；子节点需用新安装命令（含 master_tls）或改 agent.json 后重启。</p>
+      <p class="meta" style="margin:14px 0 0">1pm：先「更新主节点」再「强制更新子节点 1pm」。1Panel：Agent 自动登录后调用官方升级 API（已最新则跳过）。面板开启 SSL 后 Master 自动继承 <code>{BASE_DIR}/1panel/secret</code> 证书（从 1pctl 读 BASE_DIR；HTTP→HTTPS）；子节点需用新安装命令（含 master_tls）或改 agent.json 后重启。</p>
     </div>
   </div>
 </div>
