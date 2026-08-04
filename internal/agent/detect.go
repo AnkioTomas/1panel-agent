@@ -47,5 +47,11 @@ func SetPassword(plain string) error {
 	}
 	cfg.PanelPasswordEnc = enc
 	cfg.PanelPassword = ""
-	return config.Save(cfg)
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
+	if err := EnsureLocalPanelHardening(cfg); err != nil {
+		log.Printf("local panel hardening after setpwd: %v", err)
+	}
+	return nil
 }

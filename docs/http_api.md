@@ -135,14 +135,13 @@ Master 检测到面板 `server.crt`/`server.key` 可加载时（路径 `{1pctl B
 
 ### POST /__mp/api/panel-ssl
 
-批量开关主节点 + 在线子节点面板自签 SSL，并同步 Agent `master_tls`。
+只开关**主节点**面板自签 SSL，并同步在线 Agent 的 `master_tls`（隧道走 wss/ws）。
 
 ```json
 {"enable": true}
 ```
 
-开启顺序：主节点 SSL → 等证书就绪 → 推 `master_tls=true` → 推子节点本机 SSL。  
-关闭顺序：主节点关 SSL → 等证书消失 → 推 `master_tls=false` → 关子节点本机 SSL。
+Agent 本机面板不在此开启 SSL：Agent 安装/启动时强制 `BindAddress=127.0.0.1` 且 SSL Disable（本机明文，不对外）。
 
 ### GET /__mp/go/{id}
 

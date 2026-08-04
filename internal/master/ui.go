@@ -521,10 +521,10 @@ tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font
 
       <h3 class="section-title">1Panel SSL</h3>
       <div class="actions">
-        <button class="btn plain" type="button" id="btnSSLOn" onclick="panelSSL(true)">全部开启 SSL</button>
-        <button class="btn plain" type="button" id="btnSSLOff" onclick="panelSSL(false)">全部关闭 SSL</button>
+        <button class="btn plain" type="button" id="btnSSLOn" onclick="panelSSL(true)">开启主节点 SSL</button>
+        <button class="btn plain" type="button" id="btnSSLOff" onclick="panelSSL(false)">关闭主节点 SSL</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">1pm：先更新主节点再更新子节点。1Panel：调用官方升级 API（已最新则跳过）。SSL：自签证书，主节点先切换并同步子节点 master_tls；过程会短暂重启面板。</p>
+      <p class="meta" style="margin:14px 0 0">1pm：先更新主节点再更新子节点。1Panel：调用官方升级 API（已最新则跳过）。主节点 SSL：加密公网入口与 Agent 隧道（wss）；子节点本机面板始终 Bind 127.0.0.1 且禁用 SSL，不对外、不二次套 TLS。</p>
     </div>
   </div>
 </div>
@@ -723,8 +723,8 @@ function upgradePanel(){
 }
 function panelSSL(enable){
   const tip=enable
-    ? '将为主节点与所有在线子节点开启面板自签 SSL，并同步 master_tls。面板会短暂重启。继续？'
-    : '将关闭主节点与所有在线子节点的面板 SSL，并同步 master_tls。面板会短暂重启。继续？';
+    ? '将开启主节点面板自签 SSL，并同步所有在线子节点走 wss（master_tls）。子节点本机面板不会开 SSL。继续？'
+    : '将关闭主节点面板 SSL，并同步子节点改回 ws。继续？';
   if(!confirm(tip)) return;
   const btnOn=document.getElementById('btnSSLOn');
   const btnOff=document.getElementById('btnSSLOff');
@@ -752,18 +752,17 @@ function panelSSL(enable){
     }
     if(data.master_ssl && !data.master_ssl.ok) fails.push('主节点 SSL: '+(data.master_ssl.error||'fail'));
     collect(data.master_tls,'master_tls');
-    collect(data.agents_ssl,'ssl');
     if(fails.length){
       alert((enable?'开启':'关闭')+'部分失败:\n'+fails.join('\n'));
     }else{
-      showToast(enable?'已全部开启 SSL':'已全部关闭 SSL');
+      showToast(enable?'主节点 SSL 已开启':'主节点 SSL 已关闭');
     }
     setTimeout(function(){ location.reload(); }, 2000);
   }).catch(e=>{
     alert('SSL 操作失败: '+(e&&e.message?e.message:e));
     btnOn.disabled=false; btnOff.disabled=false;
-    btnOn.textContent='全部开启 SSL';
-    btnOff.textContent='全部关闭 SSL';
+    btnOn.textContent='开启主节点 SSL';
+    btnOff.textContent='关闭主节点 SSL';
   });
 }
 function displayName(a){

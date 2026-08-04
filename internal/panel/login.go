@@ -3,6 +3,7 @@ package panel
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -97,7 +98,9 @@ func buildLoginClient(base *http.Client, loopback bool) (*http.Client, error) {
 				KeepAlive: 30 * time.Second,
 				LocalAddr: &net.TCPAddr{IP: randomLoopbackIP(), Port: 0},
 			}).DialContext,
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 本机面板自签
 		}
+		return c, nil
 	}
 	return c, nil
 }

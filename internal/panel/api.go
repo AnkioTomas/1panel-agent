@@ -197,3 +197,20 @@ func UpdateSSL(client *http.Client, base, entrance string, cookies []*http.Cooki
 	}
 	return nil
 }
+
+// UpdateBindInfo 更新面板监听地址（如 127.0.0.1）；面板会异步重启。
+func UpdateBindInfo(client *http.Client, base, entrance string, cookies []*http.Cookie, bindAddress string) error {
+	base = strings.TrimRight(base, "/")
+	if bindAddress == "" {
+		bindAddress = "127.0.0.1"
+	}
+	body := map[string]any{
+		"ipv6":        "Disable",
+		"bindAddress": bindAddress,
+	}
+	_, _, err := doJSON(client, http.MethodPost, base+"/api/v2/core/settings/bind/update", entrance, cookies, body)
+	if err != nil {
+		return fmt.Errorf("bind update: %w", err)
+	}
+	return nil
+}

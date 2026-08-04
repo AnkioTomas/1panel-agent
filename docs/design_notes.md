@@ -67,5 +67,10 @@ Master：
 - cmux：**有证** → HTTPS + HTTP `307` 跳转；**无证** → 明文 HTTP
 - `GetCertificate` + 约 5s 扫 mtime，热加载
 - 上游本机面板随证书变为 `https://127.0.0.1:<internal>`（自签跳过校验）
+- 管理页「开启/关闭主节点 SSL」只动主节点，并同步 Agent `master_tls`
 
-Agent：安装命令在 Master 有证时用 `https://`，并写入 `master_tls`；连接走 `wss`（自签跳过校验）。旧 Agent 无该字段仍用 `ws`，开 SSL 后需重装或改 `agent.json`。
+Agent：
+
+- 安装命令在 Master 有证时用 `https://`，并写入 `master_tls`；连接走 `wss`（自签跳过校验）
+- **本机面板不对外、不开 SSL**：安装后与每次 `agent run` 检查并强制 `BindAddress=127.0.0.1` + SSL Disable
+- 旧 Agent 无 `master_tls` 仍用 `ws`，主节点开 SSL 后需重装或由管理页同步

@@ -39,7 +39,7 @@ func (s *Server) handleUpgradePanelMaster(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// panelSSLResult 是批量 SSL 中单个节点结果。
+// panelSSLResult 是主节点 SSL / Agent master_tls 单项结果。
 type panelSSLResult struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -49,7 +49,8 @@ type panelSSLResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
-// handlePanelSSL 批量开关主节点 + 在线子节点的面板自签 SSL，并同步 master_tls。
+// handlePanelSSL 只开关主节点面板 SSL，并同步在线 Agent 的 master_tls（wss）。
+// Agent 本机面板不在此开启 SSL：由 Agent 强制 BindAddress=127.0.0.1 且 SSL Disable。
 func (s *Server) handlePanelSSL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -67,54 +68,27 @@ func (s *Server) handlePanelSSL(w http.ResponseWriter, r *http.Request) {
 	cookies := r.Cookies()
 	client := panel.NewInsecureClient(2 * time.Minute)
 
-	out := map[string]any{
-		"enable": req.Enable,
-	}
+	out := map[string]any{"enable": req.Enable}
 	var masterErr string
 
-	if req.Enable {
-		if err := panel.UpdateSSL(client, s.LocalPanel, s.Entrance, cookies, true, domain); err != nil {
-			masterErr = err.Error()
-		} else if err := s.waitPanelSSL(true, 90*time.Second); err != nil {
-			masterErr = err.Error()
-		}
-		out["master_ssl"] = panelSSLResult{
-			ID: "local", Name: "主节点", OK: masterErr == "", Action: "ssl",
-			Error: masterErr,
-		}
-		if masterErr != "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(out)
-			return
-		}
-		tlsResults := s.broadcastPanelControl(protocol.PanelControl{Action: "master_tls", Enable: true})
-		sslResults := s.broadcastPanelControl(protocol.PanelControl{Action: "ssl", Enable: true, Domain: domain})
-		out["master_tls"] = tlsResults
-		out["agents_ssl"] = sslResults
-		out["ok"] = countOK(tlsResults) == len(tlsResults) && countOK(sslResults) == len(sslResults)
-	} else {
-		if err := panel.UpdateSSL(client, s.LocalPanel, s.Entrance, cookies, false, domain); err != nil {
-			masterErr = err.Error()
-		} else if err := s.waitPanelSSL(false, 90*time.Second); err != nil {
-			masterErr = err.Error()
-		}
-		out["master_ssl"] = panelSSLResult{
-			ID: "local", Name: "主节点", OK: masterErr == "", Action: "ssl",
-			Error: masterErr,
-		}
-		if masterErr != "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(out)
-			return
-		}
-		tlsResults := s.broadcastPanelControl(protocol.PanelControl{Action: "master_tls", Enable: false})
-		sslResults := s.broadcastPanelControl(protocol.PanelControl{Action: "ssl", Enable: false, Domain: domain})
-		out["master_tls"] = tlsResults
-		out["agents_ssl"] = sslResults
-		out["ok"] = countOK(tlsResults) == len(tlsResults) && countOK(sslResults) == len(sslResults)
+	if err := panel.UpdateSSL(client, s.LocalPanel, s.Entrance, cookies, req.Enable, domain); err != nil {
+		masterErr = err.Error()
+	} else if err := s.waitPanelSSL(req.Enable, 90*time.Second); err != nil {
+		masterErr = err.Error()
 	}
+	out["master_ssl"] = panelSSLResult{
+		ID: "local", Name: "主节点", OK: masterErr == "", Action: "ssl", Error: masterErr,
+	}
+	if masterErr != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(out)
+		return
+	}
+
+	tlsResults := s.broadcastPanelControl(protocol.PanelControl{Action: "master_tls", Enable: req.Enable})
+	out["master_tls"] = tlsResults
+	out["ok"] = countOK(tlsResults) == len(tlsResults)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -135,8 +109,8 @@ func (s *Server) waitPanelSSL(wantReady bool, timeout time.Duration) error {
 	for time.Now().Before(deadline) {
 		ready := panel.PanelSSLReady()
 		if ready == wantReady {
-			// 给 reloader / 上游切换留一点时间
-			time.Sleep(1500 * time.Millisecond)
+			// 证书文件变化后，cmux reloader 最多约 5s 才更新内存证书
+			time.Sleep(6 * time.Second)
 			if panel.PanelSSLReady() == wantReady {
 				return nil
 			}
@@ -223,6 +197,5 @@ func hostOnly(hostport string) string {
 	if err == nil && h != "" {
 		return h
 	}
-	// 可能无端口
 	return hostport
 }

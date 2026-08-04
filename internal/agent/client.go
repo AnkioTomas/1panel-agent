@@ -48,6 +48,9 @@ func Run(cfg *config.Agent) error {
 		return err
 	}
 	c := &Client{Cfg: cfg}
+	if err := EnsureLocalPanelHardening(cfg); err != nil {
+		log.Printf("local panel hardening: %v", err)
+	}
 	backoff := time.Second
 	for {
 		err := c.connectOnce()

@@ -24,8 +24,8 @@ const (
 	StreamTypeUpdate byte = 4
 	// StreamTypePanelUpgrade 表示 Master 通知 Agent 用本机会话触发 1Panel 官方升级 API。
 	StreamTypePanelUpgrade byte = 5
-	// StreamTypePanelControl 表示 Master 通知 Agent 执行面板控制（本机 SSL / master_tls）。
-	// body JSON: {"action":"ssl"|"master_tls","enable":bool}
+	// StreamTypePanelControl 表示 Master 通知 Agent 同步 master_tls。
+	// body JSON: {"action":"master_tls","enable":bool}
 	StreamTypePanelControl byte = 6
 	maxJSONFrame                = 16 << 20
 	maxChunk                    = 8 << 20
@@ -33,9 +33,9 @@ const (
 
 // PanelControl 是 StreamTypePanelControl 的请求体。
 type PanelControl struct {
-	Action string `json:"action"` // ssl | master_tls
+	Action string `json:"action"` // master_tls
 	Enable bool   `json:"enable"`
-	Domain string `json:"domain,omitempty"` // ssl 自签 CN；空则 Agent 自选
+	Domain string `json:"domain,omitempty"` // 兼容保留，当前未使用
 }
 
 // Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。
