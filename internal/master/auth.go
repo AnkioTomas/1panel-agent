@@ -2,8 +2,6 @@ package master
 
 import (
 	"crypto/subtle"
-	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +10,7 @@ import (
 	"time"
 
 	"1panel-agent/internal/config"
+	"1panel-agent/internal/panel"
 )
 
 // authCookie 是 Master 管理页会话 Cookie 名。
@@ -68,16 +67,8 @@ func (s *Server) localPanelCodeOK(cookieHeader string) bool {
 		return false
 	}
 	req.Header.Set("Cookie", cookieHeader)
-	if s.Entrance != "" {
-		req.Header.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(s.Entrance)))
-	}
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-	resp, err := client.Do(req)
+	panel.ApplyEntrance(req.Header, s.Entrance)
+	resp, err := panel.NewInsecureClient(5 * time.Second).Do(req)
 	if err != nil {
 		return false
 	}

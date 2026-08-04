@@ -78,7 +78,9 @@ func runAgent(args []string) error {
 		if err != nil {
 			return fmt.Errorf("load config: %w (run agent install first)", err)
 		}
-		agent.AutofillPanel(cfg)
+		if err := agent.AutofillPanel(cfg); err != nil {
+			return err
+		}
 		return agent.Run(cfg)
 	case "setpwd":
 		return runAgentSetpwd(args[1:])

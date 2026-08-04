@@ -39,7 +39,7 @@ type apiResp struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// Login 使用默认 HTTP 客户端登录 panelBase（如 http://127.0.0.1:52045）。
+// Login 使用默认 HTTP 客户端登录 panelBase（如 http://127.0.0.1:<port>）。
 func Login(panelBase, entrance, username, password string) (*LoginResult, error) {
 	return LoginWithClient(nil, panelBase, entrance, username, password, "")
 }

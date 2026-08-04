@@ -9,19 +9,19 @@ import (
 )
 
 // AutofillPanel 通过 1Panel CLI 填充本机面板 URL、用户名与安全入口。
-func AutofillPanel(cfg *config.Agent) {
+// 端口只来自 1panel user-info；探测失败直接返回错误，不回退默认端口。
+func AutofillPanel(cfg *config.Agent) error {
 	st, err := panel.ReadSettings()
 	if err != nil {
-		return
+		return fmt.Errorf("detect local 1Panel: %w", err)
 	}
-	if cfg.PanelURL == "" || cfg.PanelURL == config.DefaultPanelURL {
-		cfg.PanelURL = panel.LocalPanelURL(st.ServerPort)
-	}
+	cfg.PanelURL = panel.LocalPanelURL(st.ServerPort)
 	if st.UserName != "" {
 		cfg.PanelUser = st.UserName
 	}
 	cfg.PanelEntrance = st.SecurityEntrance
 	log.Printf("detected local 1Panel %s user=%s entrance=%s", cfg.PanelURL, cfg.PanelUser, cfg.PanelEntrance)
+	return nil
 }
 
 // SetPassword 校验本机 1Panel 密码后加密落盘（供隧道侧自动登录）。
@@ -34,8 +34,10 @@ func SetPassword(plain string) error {
 	if err != nil {
 		return err
 	}
-	AutofillPanel(cfg)
-	if cfg.PanelURL == "" || cfg.PanelUser == "" {
+	if err := AutofillPanel(cfg); err != nil {
+		return err
+	}
+	if cfg.PanelUser == "" {
 		return fmt.Errorf("无法探测本机 1Panel 用户（需要 1pctl/1panel）")
 	}
 	if _, err := panel.Login(cfg.PanelURL, cfg.PanelEntrance, cfg.PanelUser, plain); err != nil {

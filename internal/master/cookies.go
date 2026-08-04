@@ -3,27 +3,15 @@ package master
 import (
 	"net/http"
 	"strings"
+
+	"1panel-agent/internal/panel"
 )
-
-// panelSessionCookieNames 是 1Panel 面板会话相关 Cookie，切节点时由 Master/Agent 各自持有，
-// 不得作为控制面 Cookie 原样在隧道两侧混用。
-var panelSessionCookieNames = map[string]struct{}{
-	"psession":         {},
-	"pcsrftoken":       {},
-	"securityentrance": {},
-	"panel_public_key": {},
-}
-
-func isPanelSessionCookie(name string) bool {
-	_, ok := panelSessionCookieNames[strings.ToLower(name)]
-	return ok
-}
 
 // collectPanelSessionCookies 从请求中抽出本机面板会话 Cookie（用于切走时暂存）。
 func collectPanelSessionCookies(r *http.Request) []*http.Cookie {
 	var out []*http.Cookie
 	for _, c := range r.Cookies() {
-		if !isPanelSessionCookie(c.Name) || c.Value == "" {
+		if !panel.IsSessionCookie(c.Name) || c.Value == "" {
 			continue
 		}
 		out = append(out, &http.Cookie{
@@ -37,7 +25,7 @@ func collectPanelSessionCookies(r *http.Request) []*http.Cookie {
 
 // expirePanelSessionCookies 让浏览器丢掉面板会话 Cookie。
 func expirePanelSessionCookies(w http.ResponseWriter) {
-	for name := range panelSessionCookieNames {
+	for _, name := range panel.SessionCookieNames {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",
@@ -51,7 +39,7 @@ func expirePanelSessionCookies(w http.ResponseWriter) {
 // writePanelSessionCookies 把暂存的本机面板会话写回浏览器。
 func writePanelSessionCookies(w http.ResponseWriter, cookies []*http.Cookie) {
 	for _, c := range cookies {
-		if c == nil || !isPanelSessionCookie(c.Name) || c.Value == "" {
+		if c == nil || !panel.IsSessionCookie(c.Name) || c.Value == "" {
 			continue
 		}
 		http.SetCookie(w, &http.Cookie{
@@ -68,7 +56,7 @@ func writePanelSessionCookies(w http.ResponseWriter, cookies []*http.Cookie) {
 func cookieHeaderForRemote(r *http.Request) string {
 	var parts []string
 	for _, c := range r.Cookies() {
-		if c.Name == "mp_node" || c.Name == authCookie || isPanelSessionCookie(c.Name) {
+		if c.Name == "mp_node" || c.Name == authCookie || panel.IsSessionCookie(c.Name) {
 			continue
 		}
 		parts = append(parts, c.Name+"="+c.Value)

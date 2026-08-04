@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -34,17 +33,7 @@ func (c *Client) handlePanelControl(stream *smux.Stream, body io.Reader) {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
 		return
 	}
-	raw, _ := json.Marshal(result)
-	respMeta := &protocol.ResponseMeta{
-		Status: http.StatusOK,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	}
-	if err := protocol.WriteJSON(stream, respMeta); err != nil {
-		return
-	}
-	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
+	c.writeJSON(stream, result)
 }
 
 func (c *Client) applyMasterTLS(enable bool) (map[string]any, error) {

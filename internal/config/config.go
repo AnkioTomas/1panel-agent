@@ -11,12 +11,10 @@ import (
 	"unicode"
 )
 
-// Agent 配置路径与默认值。
+// Agent 配置路径。
 const (
-	// DefaultPanelURL 是未探测到本机面板时的默认地址。
-	DefaultPanelURL = "http://127.0.0.1:20560"
-	dirName         = ".1panel-agent"
-	fileName        = "agent.json"
+	dirName  = ".1panel-agent"
+	fileName = "agent.json"
 )
 
 // Agent 定义了 Agent 节点的配置结构。
@@ -68,9 +66,6 @@ func Load() (*Agent, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if cfg.PanelURL == "" {
-		cfg.PanelURL = DefaultPanelURL
-	}
 	if err := migratePassword(&cfg); err != nil {
 		return nil, err
 	}
@@ -100,9 +95,6 @@ func Save(cfg *Agent) error {
 		}
 		cfg.ID = id
 	}
-	if cfg.PanelURL == "" {
-		cfg.PanelURL = DefaultPanelURL
-	}
 	cfg.PanelPassword = "" // 强制不落明文
 	dir, err := Dir()
 	if err != nil {
@@ -129,7 +121,7 @@ func LoadOrEmpty() (*Agent, error) {
 		return cfg, nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		return &Agent{PanelURL: DefaultPanelURL}, nil
+		return &Agent{}, nil
 	}
 	return nil, err
 }

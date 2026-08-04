@@ -39,6 +39,8 @@ type Client struct {
 
 	muxMu sync.Mutex
 	mux   *smux.Session
+
+	panelHTTP *http.Client
 }
 
 // Run 启动 Agent 客户端逻辑，维持与 Master 的长连接并处理自动重连。
@@ -70,9 +72,8 @@ func (c *Client) connectOnce() error {
 	if c.Cfg.Master == "" || c.Cfg.Token == "" {
 		return fmt.Errorf("master/token not configured; run agent install first")
 	}
-	AutofillPanel(c.Cfg)
-	if c.Cfg.PanelURL == "" {
-		c.Cfg.PanelURL = config.DefaultPanelURL
+	if err := AutofillPanel(c.Cfg); err != nil {
+		return err
 	}
 
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
@@ -198,22 +199,7 @@ func (c *Client) closeSession() {
 // handleStats 响应 Master 的主机状态查询。
 func (c *Client) handleStats(stream *smux.Stream, body io.Reader) {
 	_, _ = io.Copy(io.Discard, body)
-	st := collectHostStats()
-	raw, err := json.Marshal(st)
-	if err != nil {
-		c.writeErr(stream, http.StatusInternalServerError, err.Error())
-		return
-	}
-	respMeta := &protocol.ResponseMeta{
-		Status: http.StatusOK,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	}
-	if err := protocol.WriteJSON(stream, respMeta); err != nil {
-		return
-	}
-	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
+	c.writeJSON(stream, collectHostStats())
 }
 
 // getSessionCookies 在配置了加密密码时登录本机 1Panel，返回会话 Cookie（带短缓存）。
@@ -282,27 +268,14 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		return
 	}
 
-	client := &http.Client{
-		Timeout: 0,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		Transport: &http.Transport{
-			Proxy:               nil,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // local panel often self-signed
-			DisableCompression:  true,
-			MaxIdleConnsPerHost: 8,
-		},
-	}
-
-	injected, status, hdrs, raw, err := c.proxyPanelOnce(client, meta, target, panelURL.Host, bodyBytes)
+	injected, status, hdrs, raw, err := c.proxyPanelOnce(c.panelClient(), meta, target, panelURL.Host, bodyBytes)
 	if err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
 		return
 	}
 	if panelUnauthenticated(status, raw) {
 		c.clearSession()
-		injected, status, hdrs, raw, err = c.proxyPanelOnce(client, meta, target, panelURL.Host, bodyBytes)
+		injected, status, hdrs, raw, err = c.proxyPanelOnce(c.panelClient(), meta, target, panelURL.Host, bodyBytes)
 		if err != nil {
 			c.writeErr(stream, http.StatusBadGateway, err.Error())
 			return
@@ -451,6 +424,44 @@ func (c *Client) writeErr(stream *smux.Stream, status int, msg string) {
 	_ = protocol.CopyChunks(stream, strings.NewReader(msg))
 }
 
+// writeJSON 向隧道写一条 200 JSON 响应。
+func (c *Client) writeJSON(stream *smux.Stream, v any) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		c.writeErr(stream, http.StatusInternalServerError, err.Error())
+		return
+	}
+	meta := &protocol.ResponseMeta{
+		Status: http.StatusOK,
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	}
+	if err := protocol.WriteJSON(stream, meta); err != nil {
+		return
+	}
+	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
+}
+
+func (c *Client) panelClient() *http.Client {
+	if c.panelHTTP != nil {
+		return c.panelHTTP
+	}
+	c.panelHTTP = &http.Client{
+		Timeout: 0,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			Proxy:               nil,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // local panel often self-signed
+			DisableCompression:  true,
+			MaxIdleConnsPerHost: 8,
+		},
+	}
+	return c.panelHTTP
+}
+
 // applyAgentSession 去掉请求里的面板会话 Cookie，再注入 Agent 自持会话。
 func applyAgentSession(req *http.Request, cookies []*http.Cookie) {
 	kept := nonPanelCookieHeader(req.Header.Get("Cookie"))
@@ -471,21 +482,12 @@ func nonPanelCookieHeader(header string) string {
 			continue
 		}
 		name, _, ok := strings.Cut(part, "=")
-		if !ok || isPanelSessionCookieName(name) {
+		if !ok || panel.IsSessionCookie(name) {
 			continue
 		}
 		parts = append(parts, part)
 	}
 	return strings.Join(parts, "; ")
-}
-
-func isPanelSessionCookieName(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "psession", "pcsrftoken", "securityentrance", "panel_public_key":
-		return true
-	default:
-		return false
-	}
 }
 
 func panelUnauthenticated(status int, body []byte) bool {
@@ -507,7 +509,7 @@ func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie
 		return
 	}
 	for _, c := range cookies {
-		if !isPanelSessionCookieName(c.Name) {
+		if !panel.IsSessionCookie(c.Name) {
 			continue
 		}
 		sc := &http.Cookie{

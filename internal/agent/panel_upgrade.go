@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"time"
 
 	"1panel-agent/internal/panel"
-	"1panel-agent/internal/protocol"
 
 	"github.com/xtaci/smux"
 )
@@ -30,17 +28,7 @@ func (c *Client) handlePanelUpgrade(stream *smux.Stream, body io.Reader) {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
 		return
 	}
-	raw, _ := json.Marshal(result)
-	respMeta := &protocol.ResponseMeta{
-		Status: http.StatusOK,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	}
-	if err := protocol.WriteJSON(stream, respMeta); err != nil {
-		return
-	}
-	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
+	c.writeJSON(stream, result)
 }
 
 func (c *Client) upgradeLocalPanel(forceVersion string) (*panel.UpgradeResult, error) {

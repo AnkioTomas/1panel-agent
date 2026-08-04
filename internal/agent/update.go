@@ -10,12 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/config"
-	"1panel-agent/internal/protocol"
 
 	"github.com/xtaci/smux"
 )
@@ -30,17 +28,7 @@ func (c *Client) handleUpdate(stream *smux.Stream, body io.Reader) {
 		return
 	}
 
-	respMeta := &protocol.ResponseMeta{
-		Status: http.StatusOK,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	}
-	bodyJSON := fmt.Sprintf(`{"ok":true,"version":%q}`, buildinfo.Version)
-	if err := protocol.WriteJSON(stream, respMeta); err != nil {
-		return
-	}
-	_ = protocol.CopyChunks(stream, strings.NewReader(bodyJSON))
+	c.writeJSON(stream, map[string]any{"ok": true, "version": buildinfo.Version})
 
 	// 先回包再重启，避免 Master 读不到结果。
 	go func() {

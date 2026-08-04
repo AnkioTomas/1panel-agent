@@ -19,8 +19,13 @@ func EnsureLocalPanelHardening(cfg *config.Agent) error {
 	if cfg == nil {
 		return fmt.Errorf("nil agent config")
 	}
-	AutofillPanel(cfg)
-	port := portFromPanelURL(cfg.PanelURL)
+	if err := AutofillPanel(cfg); err != nil {
+		return err
+	}
+	port, err := portFromPanelURL(cfg.PanelURL)
+	if err != nil {
+		return err
+	}
 	needSSLOff := panel.PanelSSLReady()
 	needBind := listensExternally(port)
 	if !needSSLOff && !needBind {
@@ -38,9 +43,6 @@ func EnsureLocalPanelHardening(cfg *config.Agent) error {
 
 	client := panel.NewInsecureClient(2 * time.Minute)
 	base := strings.TrimRight(cfg.PanelURL, "/")
-	if base == "" {
-		base = panel.LocalPanelURL(port)
-	}
 
 	if needSSLOff {
 		res, err := panel.Login(base, cfg.PanelEntrance, cfg.PanelUser, pass)
@@ -73,7 +75,9 @@ func EnsureLocalPanelHardening(cfg *config.Agent) error {
 		}
 	}
 
-	AutofillPanel(cfg)
+	if err := AutofillPanel(cfg); err != nil {
+		return err
+	}
 	cfg.PanelURL = panel.LocalPanelURL(port)
 	_ = config.Save(cfg)
 	log.Printf("local panel hardened: url=%s", cfg.PanelURL)
@@ -104,7 +108,7 @@ func waitListenLocalhost(port int, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting panel bind 127.0.0.1:%d", port)
 }
 
-func portFromPanelURL(raw string) int {
+func portFromPanelURL(raw string) (int, error) {
 	host := raw
 	if i := strings.LastIndex(raw, "://"); i >= 0 {
 		host = raw[i+3:]
@@ -112,13 +116,13 @@ func portFromPanelURL(raw string) int {
 	host = strings.TrimSuffix(strings.SplitN(host, "/", 2)[0], "/")
 	_, portStr, err := net.SplitHostPort(host)
 	if err != nil {
-		return 52045
+		return 0, fmt.Errorf("panel_url missing port: %q", raw)
 	}
 	p, err := strconv.Atoi(portStr)
 	if err != nil || p <= 0 {
-		return 52045
+		return 0, fmt.Errorf("panel_url invalid port: %q", raw)
 	}
-	return p
+	return p, nil
 }
 
 // listensExternally 判断面板端口是否仍在 0.0.0.0/* 上监听（允许外部访问）。

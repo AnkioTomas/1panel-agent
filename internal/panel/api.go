@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -59,6 +60,20 @@ func CookieValue(cookieHeader, name string) string {
 		}
 	}
 	return ""
+}
+
+// SessionCookieNames 是 1Panel 会话相关 Cookie 名（切节点时不得混用）。
+var SessionCookieNames = []string{
+	"psession",
+	"pcsrftoken",
+	"securityentrance",
+	"panel_public_key",
+}
+
+// IsSessionCookie 判断是否为 1Panel 会话相关 Cookie。
+func IsSessionCookie(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return slices.Contains(SessionCookieNames, n)
 }
 
 func setCookies(req *http.Request, cookies []*http.Cookie) {

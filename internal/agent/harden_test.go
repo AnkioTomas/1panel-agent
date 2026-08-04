@@ -3,19 +3,23 @@ package agent
 import "testing"
 
 func TestPortFromPanelURL(t *testing.T) {
-	if got := portFromPanelURL("http://127.0.0.1:52045"); got != 52045 {
-		t.Fatalf("got %d", got)
+	got, err := portFromPanelURL("http://127.0.0.1:52045")
+	if err != nil || got != 52045 {
+		t.Fatalf("got %d err=%v", got, err)
 	}
-	if got := portFromPanelURL("https://127.0.0.1:62045/tomas"); got != 62045 {
-		t.Fatalf("got %d", got)
+	got, err = portFromPanelURL("https://127.0.0.1:62045/tomas")
+	if err != nil || got != 62045 {
+		t.Fatalf("got %d err=%v", got, err)
 	}
-	if got := portFromPanelURL("bad"); got != 52045 {
-		t.Fatalf("default got %d", got)
+	if _, err := portFromPanelURL("bad"); err == nil {
+		t.Fatal("want error for bad url")
+	}
+	if _, err := portFromPanelURL("http://127.0.0.1"); err == nil {
+		t.Fatal("want error for missing port")
 	}
 }
 
 func TestListensExternallyParse(t *testing.T) {
-	// 无端口时不应误判
 	if listensExternally(0) {
 		t.Fatal("port 0")
 	}

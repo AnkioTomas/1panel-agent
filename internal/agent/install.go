@@ -56,7 +56,9 @@ func Install(master, token string, opts InstallOpts) error {
 	if err != nil {
 		return err
 	}
-	AutofillPanel(cfg)
+	if err := AutofillPanel(cfg); err != nil {
+		return err
+	}
 	cfg.Master = master
 	cfg.Token = token
 	cfg.MasterTLS = opts.MasterTLS
