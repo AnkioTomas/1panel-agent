@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"1panel-agent/internal/panel"
 	"1panel-agent/internal/protocol"
 )
 
@@ -22,6 +23,30 @@ type panelUpgradeResult struct {
 	TargetVersion string `json:"target_version,omitempty"`
 	Message       string `json:"message,omitempty"`
 	Error         string `json:"error,omitempty"`
+}
+
+// handleUpgradePanelMaster 用当前浏览器面板会话触发本机 1Panel 官方升级。
+func (s *Server) handleUpgradePanelMaster(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Version string `json:"version"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req)
+
+	cookies := r.Cookies()
+	client := panel.NewInsecureClient(12 * time.Minute)
+	res, err := panel.Upgrade(client, s.LocalPanel, s.Entrance, cookies, req.Version)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "message": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
 }
 
 // handleUpgradePanel 通知所有在线 Agent：登录本机 1Panel 后调用官方升级 API。

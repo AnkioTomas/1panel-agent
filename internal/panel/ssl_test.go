@@ -58,6 +58,9 @@ func TestPanelSSLReadyAndLocalPanelURL(t *testing.T) {
 	if u := LocalPanelURL(62045); u != "http://127.0.0.1:62045" {
 		t.Fatalf("http url: %s", u)
 	}
+	if u := LocalPanelURLWithSSL(62045, false); u != "http://127.0.0.1:62045" {
+		t.Fatalf("explicit http: %s", u)
+	}
 
 	writeTestCertPair(t, dir)
 	if !PanelSSLReady() {
@@ -69,6 +72,9 @@ func TestPanelSSLReadyAndLocalPanelURL(t *testing.T) {
 	}
 	if u := LocalPanelURL(62045); u != "https://127.0.0.1:62045" {
 		t.Fatalf("https url: %s", u)
+	}
+	if u := LocalPanelURLWithSSL(62045, true); u != "https://127.0.0.1:62045" {
+		t.Fatalf("explicit https: %s", u)
 	}
 }
 

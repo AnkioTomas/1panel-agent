@@ -85,16 +85,24 @@ func LoadPanelTLS() (*tls.Certificate, error) {
 	return &cert, nil
 }
 
-// PanelSSLReady 表示面板 secret 证书可加载（用户已开启面板 SSL）。
+// PanelSSLReady 表示面板 secret 证书文件存在（用户已开启面板 SSL；关 SSL 会删文件）。
+// 只 Stat，不解析证书；真正挂载时再用 LoadPanelTLS。
 func PanelSSLReady() bool {
-	_, err := LoadPanelTLS()
-	return err == nil
+	certFile, keyFile := PanelCertPaths()
+	_, err1 := os.Stat(certFile)
+	_, err2 := os.Stat(keyFile)
+	return err1 == nil && err2 == nil
 }
 
-// LocalPanelURL 生成指定端口的本地 1Panel 地址；面板 SSL 就绪时用 https。
+// LocalPanelURL 按当前证书文件是否存在生成本地 1Panel 地址。
 func LocalPanelURL(port int) string {
+	return LocalPanelURLWithSSL(port, PanelSSLReady())
+}
+
+// LocalPanelURLWithSSL 按显式 SSL 状态生成本地 1Panel 地址。
+func LocalPanelURLWithSSL(port int, ssl bool) string {
 	scheme := "http"
-	if PanelSSLReady() {
+	if ssl {
 		scheme = "https"
 	}
 	return fmt.Sprintf("%s://127.0.0.1:%d", scheme, port)

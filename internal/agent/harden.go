@@ -56,7 +56,7 @@ func EnsureLocalPanelHardening(cfg *config.Agent) error {
 			return err
 		}
 		// SSL 关闭后面板重启，scheme 变 http
-		cfg.PanelURL = panel.LocalPanelURL(port)
+		cfg.PanelURL = panel.LocalPanelURLWithSSL(port, false)
 		base = cfg.PanelURL
 		_ = config.Save(cfg)
 		needBind = listensExternally(port) // 重启后可能仍对外
@@ -78,7 +78,7 @@ func EnsureLocalPanelHardening(cfg *config.Agent) error {
 	if err := AutofillPanel(cfg); err != nil {
 		return err
 	}
-	cfg.PanelURL = panel.LocalPanelURL(port)
+	cfg.PanelURL = panel.LocalPanelURLWithSSL(port, false)
 	_ = config.Save(cfg)
 	log.Printf("local panel hardened: url=%s", cfg.PanelURL)
 	return nil

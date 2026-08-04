@@ -36,7 +36,7 @@ func (c *certStore) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, erro
 	return cert, nil
 }
 
-// startCertReloader 周期性检查面板证书文件，更新 store，并回调 SSL 就绪变化。
+// startCertReloader 周期性检查面板证书文件，更新 store，并在就绪状态翻转时回调。
 func startCertReloader(store *certStore, onChange func(ready bool)) {
 	var lastMod time.Time
 	var lastReady bool
@@ -78,9 +78,10 @@ func startCertReloader(store *certStore, onChange func(ready bool)) {
 		wasReady := lastReady
 		lastMod = mod
 		lastReady = true
-		if !wasReady {
-			log.Printf("panel tls cert loaded from %s", panel.SecretDir())
+		if wasReady {
+			return // 证书续期：已更新 store，上游 scheme 不变
 		}
+		log.Printf("panel tls cert loaded from %s", panel.SecretDir())
 		if onChange != nil {
 			onChange(true)
 		}
@@ -164,7 +165,7 @@ func (s *Server) onPanelTLSChange(ready bool) {
 	if s.InternalPort <= 0 {
 		return
 	}
-	base := panel.LocalPanelURL(s.InternalPort)
+	base := panel.LocalPanelURLWithSSL(s.InternalPort, ready)
 	s.LocalPanel = base
 	s.rebuildLocalProxy()
 	log.Printf("local panel upstream -> %s (ssl_ready=%v)", base, ready)
