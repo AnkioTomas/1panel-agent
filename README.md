@@ -147,13 +147,6 @@ curl -fsSL "http://<master>:<port>/agent.sh?timestamp=...&sign=..." | sudo bash
 sudo 1pm uninstall
 ```
 
-也可显式：
-
-```bash
-sudo 1pm master uninstall   # 恢复原 1Panel 端口并清理
-sudo 1pm agent uninstall
-```
-
 ---
 
 ## 构建与发布

@@ -22,15 +22,6 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "master":
-		if len(os.Args) >= 3 {
-			switch os.Args[2] {
-			case "uninstall":
-				if err := master.Uninstall(); err != nil {
-					fatal(err)
-				}
-				return
-			}
-		}
 		if err := runMaster(os.Args[2:]); err != nil {
 			fatal(err)
 		}
@@ -65,10 +56,10 @@ func runMaster(args []string) error {
 	return srv.Run()
 }
 
-// runAgent 处理 agent 子命令（install/run/setpwd/uninstall）。
+// runAgent 处理 agent 子命令（install/run/setpwd）。
 func runAgent(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("agent needs subcommand: install|run|setpwd|uninstall")
+		return fmt.Errorf("agent needs subcommand: install|run|setpwd")
 	}
 	switch args[0] {
 	case "install":
@@ -84,8 +75,6 @@ func runAgent(args []string) error {
 		return agent.Run(cfg)
 	case "setpwd":
 		return runAgentSetpwd(args[1:])
-	case "uninstall":
-		return agent.Uninstall()
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
 	}
@@ -225,8 +214,6 @@ func usage() {
 Usage:
   1pm master                          start master
   1pm uninstall                       auto-detect and uninstall master and/or agent
-  1pm master uninstall                uninstall master only
-  1pm agent uninstall                 uninstall agent only
 
   1pm agent install <host:port> <token> [--name NAME] [--group GROUP]
                                       write config at install time (panel URL/user auto-detected)

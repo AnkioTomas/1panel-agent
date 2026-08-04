@@ -10,12 +10,10 @@
 1pm <command>
 
   master                 启动 Master（takeover + 监听原面板端口）
-  master uninstall       仅卸载 Master（恢复端口、清状态、删二进制）
   agent install …        安装时写入配置（不启动长连接）
   agent run              用已有配置启动 Agent
   agent setpwd […]      设置本机 1Panel 密码（AES-GCM 加密存储）
-  agent uninstall        仅卸载 Agent
-  uninstall              自动检测本机角色并卸载（推荐）
+  uninstall              自动检测本机角色并卸载
   version | -v | --version
   help  | -h | --help
 ```
@@ -44,8 +42,6 @@ systemd：`ExecStart=/usr/local/bin/1pm master`
 
 ```bash
 1pm uninstall
-1pm master uninstall
-1pm agent uninstall
 ```
 
 检测路径（与安装脚本一致）：

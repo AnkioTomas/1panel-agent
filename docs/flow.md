@@ -14,7 +14,7 @@ Master 启动时执行：
 6. 写入 /var/lib/1pm/master.json（original_port / internal_port / token）
 ```
 
-卸载（`1pm uninstall` / `master uninstall`）会尝试把端口改回 `original_port`。
+卸载（`1pm uninstall`）会尝试把端口改回 `original_port`。
 
 ---
 

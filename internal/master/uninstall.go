@@ -1,7 +1,6 @@
 package master
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -15,6 +14,7 @@ import (
 const masterServiceFile = "/etc/systemd/system/1pm-master.service"
 
 // Clean 停止 Master、恢复 1Panel 端口、清理状态/unit，保留二进制。
+// 由全局 `1pm uninstall` 调用；二进制删除在 CLI 统一处理。
 func Clean() error {
 	quietExec("systemctl", "stop", "1pm-master.service")
 	quietExec("systemctl", "disable", "1pm-master.service")
@@ -47,34 +47,10 @@ func Clean() error {
 	return nil
 }
 
-// Uninstall 停止 Master 服务、恢复原 1Panel 端口、清理状态并删除二进制。
-func Uninstall() error {
-	if err := Clean(); err != nil {
-		return err
-	}
-	removeSelfBin()
-	fmt.Println("1pm master uninstalled.")
-	return nil
-}
-
 // quietExec 执行外部命令并忽略退出码（卸载路径专用）。
 func quietExec(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	_ = cmd.Run()
-}
-
-// removeSelfBin 删除当前进程对应的二进制文件。
-func removeSelfBin() {
-	exe, err := os.Executable()
-	if err != nil {
-		log.Printf("warn: locate binary: %v", err)
-		return
-	}
-	if err := os.Remove(exe); err != nil {
-		log.Printf("warn: remove binary %s: %v", exe, err)
-		return
-	}
-	log.Printf("uninstall: removed binary %s", exe)
 }
