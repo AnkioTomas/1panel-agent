@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -253,17 +252,6 @@ func (c *Client) clearSession() {
 	c.sessMu.Unlock()
 }
 
-// applyEntrance 在启用安全入口时注入 EntranceCode 请求头。
-func (c *Client) applyEntrance(h http.Header) {
-	if c.Cfg.PanelEntrance == "" {
-		return
-	}
-	if h.Get("EntranceCode") != "" {
-		return
-	}
-	h.Set("EntranceCode", base64.StdEncoding.EncodeToString([]byte(c.Cfg.PanelEntrance)))
-}
-
 // handleHTTP 将隧道 HTTP 请求转发到本机 1Panel，并把响应写回流。
 func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, body io.Reader) {
 	panelURL, err := url.Parse(c.Cfg.PanelURL)
@@ -340,11 +328,11 @@ func (c *Client) proxyPanelOnce(client *http.Client, meta *protocol.RequestMeta,
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Del("Accept-Encoding")
 	req.Host = host
-	c.applyEntrance(req.Header)
+	panel.ApplyEntrance(req.Header, c.Cfg.PanelEntrance)
 
 	injected := c.getSessionCookies()
 	applyAgentSession(req, injected)
-	alignRequestCSRF(req.Header)
+	panel.AlignCSRF(req.Header)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -404,10 +392,10 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 	}
 	protocol.ApplyHeader(req.Header, meta.Headers)
 	req.Header.Set("Host", host)
-	c.applyEntrance(req.Header)
+	panel.ApplyEntrance(req.Header, c.Cfg.PanelEntrance)
 
 	applyAgentSession(req, c.getSessionCookies())
-	alignRequestCSRF(req.Header)
+	panel.AlignCSRF(req.Header)
 
 	if err := req.Write(conn); err != nil {
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
@@ -513,16 +501,6 @@ func panelUnauthenticated(status int, body []byte) bool {
 	return ar.Code == 401
 }
 
-// alignRequestCSRF 使 X-CSRF-Token 与 Cookie 中的 pcsrftoken 一致（1Panel 双提交校验）。
-func alignRequestCSRF(h http.Header) {
-	csrf := cookieValueFromHeader(h.Get("Cookie"), "pcsrftoken")
-	if csrf == "" {
-		h.Del("X-CSRF-Token")
-		return
-	}
-	h.Set("X-CSRF-Token", csrf)
-}
-
 // appendSessionSetCookies 把自动登录得到的会话 Cookie 写回响应，供浏览器保存。
 func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie) {
 	if len(cookies) == 0 {
@@ -545,19 +523,4 @@ func appendSessionSetCookies(headers map[string][]string, cookies []*http.Cookie
 		}
 		headers["Set-Cookie"] = append(headers["Set-Cookie"], sc.String())
 	}
-}
-
-// cookieValueFromHeader 从 Cookie 头解析指定名称的值。
-func cookieValueFromHeader(header, name string) string {
-	prefix := name + "="
-	for part := range strings.SplitSeq(header, ";") {
-		part = strings.TrimSpace(part)
-		if after, ok := strings.CutPrefix(part, prefix); ok {
-			return after
-		}
-		if len(part) > len(prefix) && strings.EqualFold(part[:len(name)], name) && part[len(name)] == '=' {
-			return part[len(name)+1:]
-		}
-	}
-	return ""
 }

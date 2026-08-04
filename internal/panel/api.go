@@ -35,7 +35,7 @@ func ApplyEntrance(h http.Header, entrance string) {
 
 // AlignCSRF 使 X-CSRF-Token 与 Cookie 中的 pcsrftoken 一致。
 func AlignCSRF(h http.Header) {
-	csrf := cookieValue(h.Get("Cookie"), "pcsrftoken")
+	csrf := CookieValue(h.Get("Cookie"), "pcsrftoken")
 	if csrf == "" {
 		h.Del("X-CSRF-Token")
 		return
@@ -43,7 +43,8 @@ func AlignCSRF(h http.Header) {
 	h.Set("X-CSRF-Token", csrf)
 }
 
-func cookieValue(cookieHeader, name string) string {
+// CookieValue 从 Cookie 头解析指定名称的值。
+func CookieValue(cookieHeader, name string) string {
 	for _, part := range strings.Split(cookieHeader, ";") {
 		part = strings.TrimSpace(part)
 		if part == "" {

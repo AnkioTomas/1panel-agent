@@ -25,8 +25,6 @@ func sidebarHook(masterIP, entrance string) string {
 // Always Master advertise IP (public_host). Never the current Agent IP.
 var MASTER_IP=__MASTER_IP__;
 var ENTRANCE=__ENTRANCE__;
-var PATCHED=false;
-var LABEL_TIMER=0;
 
 function cookie(name){
   var m=document.cookie.match(new RegExp("(?:^|; )"+name+"=([^;]*)"));
@@ -317,9 +315,9 @@ function mountSwitch(){
 }
 
 function tryMount(attempt){
-  if(mountSwitch()){ PATCHED=true; return; }
+  if(mountSwitch()) return;
   if(attempt>=40) return; // ~12s then give up — never spin forever
-  LABEL_TIMER=setTimeout(function(){ tryMount(attempt+1); }, 300);
+  setTimeout(function(){ tryMount(attempt+1); }, 300);
 }
 
 // One-shot mount retries. Do not observe sidebar mutations (that froze the page).

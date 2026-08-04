@@ -3,6 +3,8 @@ package agent
 import (
 	"net/http"
 	"testing"
+
+	"1panel-agent/internal/panel"
 )
 
 func TestApplyAgentSession(t *testing.T) {
@@ -13,16 +15,16 @@ func TestApplyAgentSession(t *testing.T) {
 		{Name: "pcsrftoken", Value: "csrf"},
 	})
 	got := req.Header.Get("Cookie")
-	if !cookieHeaderHasName(got, "psession") || cookieValueFromHeader(got, "psession") != "fresh" {
+	if panel.CookieValue(got, "psession") != "fresh" {
 		t.Fatalf("psession=%q", got)
 	}
-	if cookieValueFromHeader(got, "pcsrftoken") != "csrf" {
+	if panel.CookieValue(got, "pcsrftoken") != "csrf" {
 		t.Fatalf("csrf=%q", got)
 	}
-	if cookieValueFromHeader(got, "theme") != "dark" {
+	if panel.CookieValue(got, "theme") != "dark" {
 		t.Fatalf("theme lost: %q", got)
 	}
-	alignRequestCSRF(req.Header)
+	panel.AlignCSRF(req.Header)
 	if req.Header.Get("X-CSRF-Token") != "csrf" {
 		t.Fatalf("csrf header=%q", req.Header.Get("X-CSRF-Token"))
 	}
@@ -41,9 +43,4 @@ func TestPanelUnauthenticated(t *testing.T) {
 	if panelUnauthenticated(http.StatusOK, []byte(`<html>`)) {
 		t.Fatal("html false positive")
 	}
-}
-
-// cookieHeaderHasName kept for tests.
-func cookieHeaderHasName(header, name string) bool {
-	return cookieValueFromHeader(header, name) != ""
 }

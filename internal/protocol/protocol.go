@@ -35,7 +35,6 @@ const (
 type PanelControl struct {
 	Action string `json:"action"` // master_tls
 	Enable bool   `json:"enable"`
-	Domain string `json:"domain,omitempty"` // 兼容保留，当前未使用
 }
 
 // Register 是 Agent 在 WebSocket 升级后发送的首条 JSON 注册消息。
