@@ -263,7 +263,14 @@ verify_checksum() {
 }
 
 write_unit() {
-  cat > "$UNIT_PATH" <<'EOF'
+  # 把安装时的 Release 源写进 unit，供「更新主节点 1pm」复用（避免默默打公网）。
+  local env_block=""
+  [[ -n "${GITHUB_API:-}" ]] && env_block+="Environment=GITHUB_API=${GITHUB_API}"$'\n'
+  [[ -n "${GITHUB_DL:-}" ]] && env_block+="Environment=GITHUB_DL=${GITHUB_DL}"$'\n'
+  [[ -n "${INSTALL_CDN:-}" ]] && env_block+="Environment=INSTALL_CDN=${INSTALL_CDN}"$'\n'
+  [[ -n "${REPO:-}" ]] && env_block+="Environment=REPO=${REPO}"$'\n'
+
+  cat > "$UNIT_PATH" <<EOF
 [Unit]
 Description=1Panel multi-node master gateway
 After=network-online.target 1panel-core.service
@@ -272,7 +279,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 # State in /var/lib/1pm/master.json — do not put secrets on ExecStart.
-ExecStart=/usr/local/bin/1pm master
+${env_block}ExecStart=/usr/local/bin/1pm master
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=65535

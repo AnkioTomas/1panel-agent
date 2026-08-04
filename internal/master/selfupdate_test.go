@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"testing"
 
+	"1panel-agent/internal/config"
 	"1panel-agent/internal/release"
 )
 
@@ -72,5 +73,21 @@ func TestHandleUpdateMasterMethod(t *testing.T) {
 	s.handleUpdateMaster(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("got %d", rec.Code)
+	}
+}
+
+func TestSyncReleaseSourceFromEnv(t *testing.T) {
+	t.Setenv("GITHUB_API", "http://cdn.example:8765")
+	t.Setenv("GITHUB_DL", "http://cdn.example:8765")
+	t.Setenv("INSTALL_CDN", "global")
+	state := &config.Master{}
+	if !syncReleaseSourceFromEnv(state) {
+		t.Fatal("expected change")
+	}
+	if state.GitHubAPI != "http://cdn.example:8765" || state.InstallCDN != "global" {
+		t.Fatalf("%+v", state)
+	}
+	if syncReleaseSourceFromEnv(state) {
+		t.Fatal("second sync should be no-op")
 	}
 }

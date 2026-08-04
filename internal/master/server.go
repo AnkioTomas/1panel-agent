@@ -69,6 +69,13 @@ func New() (*Server, error) {
 		log.Printf("generated install token (rotate anytime in /__mp/)")
 		_ = config.SaveMaster(state)
 	}
+	if syncReleaseSourceFromEnv(state) {
+		if err := config.SaveMaster(state); err != nil {
+			log.Printf("warn: persist release source: %v", err)
+		} else {
+			log.Printf("release source: api=%s dl=%s cdn=%s", state.GitHubAPI, state.GitHubDL, state.InstallCDN)
+		}
+	}
 
 	s := &Server{
 		Listen:       listen,
@@ -138,20 +145,38 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		if sess, ok := s.reg.Get(c.Value); ok {
 			targetPath := r.URL.RequestURI()
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-				s.proxyWebSocket(w, r, sess, targetPath)
+				if s.proxyWebSocket(w, r, sess, targetPath) {
+					return
+				}
+			} else if s.proxyHTTP(w, r, sess, targetPath) {
 				return
 			}
-			s.proxyHTTP(w, r, sess, targetPath)
-			return
+			// 会话半死（Get 成功但 OpenStream 失败）：清节点并回主节点。
 		}
 		// Agent 已离线：丢掉过期节点选择，回主节点。
 		clearNodeCookie(w)
 	}
+	s.serveLocalPanel(w, r)
+}
+
+// serveLocalPanel 反代本机 1Panel；无上游则 404。
+func (s *Server) serveLocalPanel(w http.ResponseWriter, r *http.Request) {
 	if s.localProxy != nil {
 		s.localProxy.ServeHTTP(w, r)
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// dropDeadSession 关闭并移除已无法开流的 Agent 会话。
+func (s *Server) dropDeadSession(sess *Session) {
+	if sess == nil {
+		return
+	}
+	if sess.Mux != nil {
+		_ = sess.Mux.Close()
+	}
+	s.reg.Remove(sess.Info.ID, sess.Mux)
 }
 
 // handleAgentWS 校验签名后接受 Agent WebSocket，完成注册并挂入 smux Registry。
@@ -219,11 +244,13 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 }
 
 // proxyHTTP 经 smux 流代理 HTTP，必要时解压并注入侧边栏 Hook。
-func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
+// 返回 false 表示隧道已死，调用方应清 mp_node 并回主节点。
+func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) bool {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
-		http.Error(w, "tunnel open failed: "+err.Error(), http.StatusBadGateway)
-		return
+		log.Printf("tunnel open failed for %s: %v; fallback to local", sess.Info.ID, err)
+		s.dropDeadSession(sess)
+		return false
 	}
 	defer stream.Close()
 
@@ -241,7 +268,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	}
 	if err := protocol.WriteRequestMeta(stream, meta); err != nil {
 		http.Error(w, "tunnel write meta: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 
 	reqBody := io.Reader(http.NoBody)
@@ -251,19 +278,19 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	}
 	if err := protocol.CopyChunks(stream, reqBody); err != nil {
 		http.Error(w, "tunnel write body: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 
 	respMeta := &protocol.ResponseMeta{}
 	if err := protocol.ReadJSON(stream, respMeta); err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 
 	respBody, err := io.ReadAll(protocol.NewChunkReader(stream))
 	if err != nil {
 		http.Error(w, "tunnel read body: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 	ct := ""
 	for k, vals := range respMeta.Headers {
@@ -278,7 +305,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	// 子节点把浏览器踢去登录页时，改走主节点登录。
 	if locationIsLoginRedirect(respMeta.Headers) {
 		s.redirectToMasterLogin(w, r, "")
-		return
+		return true
 	}
 
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
@@ -299,14 +326,17 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	h.Set("Content-Length", fmt.Sprintf("%d", len(respBody)))
 	w.WriteHeader(respMeta.Status)
 	_, _ = w.Write(respBody)
+	return true
 }
 
 // proxyWebSocket 经 smux 流完成浏览器与远端 1Panel 的 WebSocket 双向转发。
-func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) {
+// 返回 false 表示隧道已死，调用方应清 mp_node 并回主节点。
+func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) bool {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
-		http.Error(w, "tunnel open failed: "+err.Error(), http.StatusBadGateway)
-		return
+		log.Printf("ws tunnel open failed for %s: %v; fallback to local", sess.Info.ID, err)
+		s.dropDeadSession(sess)
+		return false
 	}
 	defer stream.Close()
 
@@ -321,17 +351,17 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 	}
 	if err := protocol.WriteRequestMeta(stream, meta); err != nil {
 		http.Error(w, "tunnel write meta: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 	if err := protocol.CopyChunks(stream, http.NoBody); err != nil {
 		http.Error(w, "tunnel write body: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 
 	respMeta := &protocol.ResponseMeta{}
 	if err := protocol.ReadJSON(stream, respMeta); err != nil {
 		http.Error(w, "tunnel read response: "+err.Error(), http.StatusBadGateway)
-		return
+		return true
 	}
 	normalizeRemoteSetCookies(respMeta.Headers)
 	if respMeta.Status != http.StatusSwitchingProtocols {
@@ -347,17 +377,17 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		}
 		w.WriteHeader(respMeta.Status)
 		_, _ = io.Copy(w, protocol.NewChunkReader(stream))
-		return
+		return true
 	}
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijack not supported", http.StatusInternalServerError)
-		return
+		return true
 	}
 	clientConn, clientBuf, err := hj.Hijack()
 	if err != nil {
-		return
+		return true
 	}
 	defer clientConn.Close()
 
@@ -377,10 +407,10 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		}
 	}
 	if err := resp.Write(clientBuf); err != nil {
-		return
+		return true
 	}
 	if err := clientBuf.Flush(); err != nil {
-		return
+		return true
 	}
 
 	errc := make(chan error, 2)
@@ -393,6 +423,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request, sess *Se
 		errc <- err
 	}()
 	<-errc
+	return true
 }
 
 // listenPort 从 Listen 地址解析对外端口；失败时回退 "80"。

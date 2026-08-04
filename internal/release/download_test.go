@@ -118,3 +118,19 @@ func TestChecksumMismatch(t *testing.T) {
 		t.Fatalf("want checksum mismatch, got %v", err)
 	}
 }
+
+func TestCustomSourceForcesGlobalCDN(t *testing.T) {
+	c := &Config{
+		GitHubAPI:  "http://10.211.55.2:8765",
+		GitHubDL:   "http://10.211.55.2:8765",
+		InstallCDN: "auto",
+	}
+	c.normalize()
+	if c.InstallCDN != "global" {
+		t.Fatalf("InstallCDN=%q, want global", c.InstallCDN)
+	}
+	prefs := c.prefixes()
+	if len(prefs) != 1 || prefs[0] != "" {
+		t.Fatalf("prefixes=%v, want only direct", prefs)
+	}
+}

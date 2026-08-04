@@ -524,7 +524,7 @@ tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font
         <button class="btn plain" type="button" id="btnSSLOn" onclick="panelSSL(true)">开启主节点 SSL</button>
         <button class="btn plain" type="button" id="btnSSLOff" onclick="panelSSL(false)">关闭主节点 SSL</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">1pm：先更新主节点再更新子节点。1Panel：调用官方升级 API（已最新则跳过）。主节点 SSL：加密公网入口与 Agent 隧道（wss）；子节点本机面板始终 Bind 127.0.0.1 且禁用 SSL，不对外、不二次套 TLS。</p>
+      <p class="meta" style="margin:14px 0 0">1pm：先更新主节点再更新子节点（主节点沿用安装时的 Release 源，已最新则跳过）。1Panel：调用官方升级 API（已最新则跳过）。主节点 SSL：加密公网入口与 Agent 隧道（wss）；子节点本机面板始终 Bind 127.0.0.1 且禁用 SSL，不对外、不二次套 TLS。</p>
     </div>
   </div>
 </div>

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"1panel-agent/internal/buildinfo"
+	"1panel-agent/internal/config"
 	"1panel-agent/internal/release"
 )
 
@@ -30,12 +31,30 @@ func (s *Server) handleUpdateMaster(w http.ResponseWriter, r *http.Request) {
 		exe = resolved
 	}
 
-	tag, err := replaceMasterBinary(exe, &release.Config{})
+	cfg := releaseConfigFromState()
+	tag, err := cfg.ResolveTag()
 	if err != nil {
 		writeUpdateMasterErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	log.Printf("master binary updated to release %s (was %s)", tag, buildinfo.Version)
+	if tag == buildinfo.Version {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"skipped": true,
+			"tag":     tag,
+			"message": "already up to date",
+		})
+		return
+	}
+
+	tag, err = replaceMasterBinary(exe, cfg)
+	if err != nil {
+		writeUpdateMasterErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	log.Printf("master binary updated to release %s (was %s) via api=%s dl=%s cdn=%s",
+		tag, buildinfo.Version, cfg.GitHubAPI, cfg.GitHubDL, cfg.InstallCDN)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -52,6 +71,38 @@ func (s *Server) handleUpdateMaster(w http.ResponseWriter, r *http.Request) {
 			log.Printf("master restart after update: %v (%s)", err, string(out))
 		}
 	}()
+}
+
+// releaseConfigFromState 优先用 master.json 里安装时保存的源，其次环境变量，避免默默打公网。
+func releaseConfigFromState() *release.Config {
+	cfg := &release.Config{}
+	if state, err := config.LoadMaster(); err == nil {
+		cfg.GitHubAPI = state.GitHubAPI
+		cfg.GitHubDL = state.GitHubDL
+		cfg.InstallCDN = state.InstallCDN
+	}
+	return cfg
+}
+
+// syncReleaseSourceFromEnv 把安装/运行环境中的 GITHUB_* / INSTALL_CDN 写入 master.json。
+func syncReleaseSourceFromEnv(state *config.Master) bool {
+	if state == nil {
+		return false
+	}
+	changed := false
+	if v := os.Getenv("GITHUB_API"); v != "" && state.GitHubAPI != v {
+		state.GitHubAPI = v
+		changed = true
+	}
+	if v := os.Getenv("GITHUB_DL"); v != "" && state.GitHubDL != v {
+		state.GitHubDL = v
+		changed = true
+	}
+	if v := os.Getenv("INSTALL_CDN"); v != "" && state.InstallCDN != v {
+		state.InstallCDN = v
+		changed = true
+	}
+	return changed
 }
 
 // replaceMasterBinary 下载 Release 二进制并 rename 覆盖 exe。

@@ -27,6 +27,11 @@ type Master struct {
 	OriginalPort int    `json:"original_port"`
 	InternalPort int    `json:"internal_port"`
 	PublicHost   string `json:"public_host,omitempty"` // optional NAT override; default = request Host
+
+	// 安装时的 Release 源，供「更新主节点 1pm」复用，避免默默打到公网 latest。
+	GitHubAPI  string `json:"github_api,omitempty"`
+	GitHubDL   string `json:"github_dl,omitempty"`
+	InstallCDN string `json:"install_cdn,omitempty"` // auto | global | cn
 }
 
 // MasterPath 返回 Master 配置文件路径（root 用户下默认为 /var/lib/1pm/master.json）。

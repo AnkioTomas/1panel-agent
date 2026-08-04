@@ -59,6 +59,13 @@ func (c *Config) normalize() {
 	}
 	c.GitHubAPI = strings.TrimRight(c.GitHubAPI, "/")
 	c.GitHubDL = strings.TrimRight(c.GitHubDL, "/")
+	// 自定义 API/下载源时禁止走 gh-proxy 镜像前缀，否则 URL 会被拼坏。
+	if (c.GitHubAPI != "" && c.GitHubAPI != "https://api.github.com") ||
+		(c.GitHubDL != "" && c.GitHubDL != "https://github.com") {
+		if c.InstallCDN == "" || c.InstallCDN == "auto" {
+			c.InstallCDN = "global"
+		}
+	}
 	if c.HTTPClient == nil {
 		c.HTTPClient = &http.Client{Timeout: 3 * time.Minute}
 	}
