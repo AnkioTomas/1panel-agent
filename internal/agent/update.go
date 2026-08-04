@@ -18,11 +18,10 @@ import (
 	"github.com/xtaci/smux"
 )
 
-// handleUpdate 响应 Master 强制更新：从 Master 拉取 /agent.bin，替换本机二进制并重启服务。
+// handleUpdate 响应 Master 强制更新：优先从隧道 body 接收二进制；
+// body 为空则回退 HTTP 拉 /agent.bin（兼容旧 Master）。
 func (c *Client) handleUpdate(stream *smux.Stream, body io.Reader) {
-	_, _ = io.Copy(io.Discard, body)
-
-	if err := c.downloadAndReplaceBinary(); err != nil {
+	if err := c.replaceBinaryFrom(body); err != nil {
 		log.Printf("agent update failed: %v", err)
 		c.writeErr(stream, http.StatusBadGateway, err.Error())
 		return
@@ -38,6 +37,49 @@ func (c *Client) handleUpdate(stream *smux.Stream, body io.Reader) {
 			log.Printf("agent restart after update: %v (%s)", err, string(out))
 		}
 	}()
+}
+
+// replaceBinaryFrom 把 r 写成可执行文件并替换本机二进制。
+// r 读到 0 字节时回退到 HTTP 下载（旧 Master 只发空 body）。
+func (c *Client) replaceBinaryFrom(r io.Reader) error {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "/usr/local/bin/1pm"
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+
+	dir := filepath.Dir(exe)
+	tmp, err := os.CreateTemp(dir, "1pm-update-*")
+	if err != nil {
+		return fmt.Errorf("temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	n, err := io.Copy(tmp, r)
+	if err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if n == 0 {
+		_ = os.Remove(tmpName)
+		return c.downloadAndReplaceBinary()
+	}
+
+	if err := os.Chmod(tmpName, 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, exe); err != nil {
+		return fmt.Errorf("replace binary: %w", err)
+	}
+	log.Printf("agent binary updated via tunnel (%d bytes, was %s)", n, buildinfo.Version)
+	return nil
 }
 
 func (c *Client) downloadAndReplaceBinary() error {
