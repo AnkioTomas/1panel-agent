@@ -146,27 +146,104 @@ func TestHandleRootDeadTunnelClearsNode(t *testing.T) {
 	// 等服务端关掉，使 OpenStream 失败，但可能尚未 IsClosed。
 	time.Sleep(50 * time.Millisecond)
 
+	s.stashLocalSession([]*http.Cookie{{Name: "psession", Value: "local-keep", Path: "/"}})
+
 	req := httptest.NewRequest(http.MethodGet, "/apps", nil)
 	req.AddCookie(&http.Cookie{Name: "mp_node", Value: "dead01"})
+	req.AddCookie(&http.Cookie{Name: "psession", Value: "remote-stale"})
 	rec := httptest.NewRecorder()
 	s.handleRoot(rec, req)
 
-	if rec.Code != http.StatusOK {
+	// 必须 302 恢复本机会话，不能同请求反代（远端 Cookie 会打进登录页）。
+	if rec.Code != http.StatusFound {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "local-ok") {
-		t.Fatalf("body=%q", rec.Body.String())
+	if loc := rec.Header().Get("Location"); loc != "/" {
+		t.Fatalf("loc=%q", loc)
 	}
-	cleared := false
+	cleared, restored := false, false
 	for _, sc := range rec.Result().Header["Set-Cookie"] {
 		if strings.HasPrefix(sc, "mp_node=") && (strings.Contains(sc, "Max-Age=-1") || strings.Contains(sc, "Max-Age=0")) {
 			cleared = true
+		}
+		if strings.HasPrefix(sc, "psession=local-keep") {
+			restored = true
 		}
 	}
 	if !cleared {
 		t.Fatalf("mp_node not cleared: %v", rec.Result().Header["Set-Cookie"])
 	}
+	if !restored {
+		t.Fatalf("local session not restored: %v", rec.Result().Header["Set-Cookie"])
+	}
 	if _, ok := s.reg.Get("dead01"); ok {
 		t.Fatal("dead session still in registry")
+	}
+}
+
+func TestSwitchAgentToAgentKeepsLocalStash(t *testing.T) {
+	s := &Server{reg: NewRegistry()}
+
+	c1, c2 := net.Pipe()
+	t.Cleanup(func() {
+		_ = c1.Close()
+		_ = c2.Close()
+	})
+	go func() {
+		srv, err := smux.Server(c2, nil)
+		if err != nil {
+			return
+		}
+		defer srv.Close()
+		for {
+			st, err := srv.AcceptStream()
+			if err != nil {
+				return
+			}
+			_ = st.Close()
+		}
+	}()
+	mux, err := smux.Client(c1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mux.Close() })
+	s.reg.Put(&Session{Info: AgentInfo{ID: "agent01"}, Mux: mux})
+	s.reg.Put(&Session{Info: AgentInfo{ID: "agent02"}, Mux: mux})
+
+	// master → agent01：暂存本机会话
+	req := httptest.NewRequest(http.MethodGet, "/__mp/go/agent01", nil)
+	req.AddCookie(&http.Cookie{Name: "psession", Value: "local-sess"})
+	req.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "local-csrf"})
+	rec := httptest.NewRecorder()
+	s.handleSwitch(rec, req, "agent01")
+	if rec.Code != http.StatusFound {
+		t.Fatalf("switch1 status=%d", rec.Code)
+	}
+
+	// agent01 → agent02：浏览器已是远端 Cookie，不得覆盖 stash
+	req2 := httptest.NewRequest(http.MethodGet, "/__mp/go/agent02", nil)
+	req2.AddCookie(&http.Cookie{Name: "mp_node", Value: "agent01"})
+	req2.AddCookie(&http.Cookie{Name: "psession", Value: "remote-sess"})
+	req2.AddCookie(&http.Cookie{Name: "pcsrftoken", Value: "remote-csrf"})
+	rec2 := httptest.NewRecorder()
+	s.handleSwitch(rec2, req2, "agent02")
+	if rec2.Code != http.StatusFound {
+		t.Fatalf("switch2 status=%d", rec2.Code)
+	}
+
+	rec3 := httptest.NewRecorder()
+	s.handleLocal(rec3, httptest.NewRequest(http.MethodGet, "/__mp/local", nil))
+	restored := false
+	for _, sc := range rec3.Result().Header["Set-Cookie"] {
+		if strings.HasPrefix(sc, "psession=local-sess") {
+			restored = true
+		}
+		if strings.Contains(sc, "psession=remote-sess") {
+			t.Fatalf("restored remote session: %v", rec3.Result().Header["Set-Cookie"])
+		}
+	}
+	if !restored {
+		t.Fatalf("local session lost after agent→agent: %v", rec3.Result().Header["Set-Cookie"])
 	}
 }

@@ -42,6 +42,11 @@ function goMasterLogin(){
   clearMpNode();
   location.replace(masterLoginURL());
 }
+// 子节点落到登录路由时，必须走服务端 /__mp/local 恢复本机会话。
+// 客户端清 mp_node 会丢掉 Master 内存暂存，切回主节点被迫重新登录。
+function goMasterLocal(){
+  location.replace("/__mp/local");
+}
 function isLoginRoute(){
   var p=(location.pathname||"").toLowerCase();
   var h=(location.hash||"").toLowerCase();
@@ -51,7 +56,7 @@ function isLoginRoute(){
   return false;
 }
 function enforceMasterLogin(){
-  if(currentID() && isLoginRoute()) goMasterLogin();
+  if(currentID() && isLoginRoute()) goMasterLocal();
 }
 
 function ensureStyle(){

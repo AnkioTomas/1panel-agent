@@ -153,8 +153,10 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 			}
 			// 会话半死（Get 成功但 OpenStream 失败）：清节点并回主节点。
 		}
-		// Agent 已离线：丢掉过期节点选择，回主节点。
-		clearNodeCookie(w)
+		// Agent 已离线/隧道死：必须恢复本机会话后再 302。
+		// 同请求反代本机仍带着远端 Cookie，会直接渲染登录页。
+		s.restoreLocalAndRedirect(w, r, "/")
+		return
 	}
 	s.serveLocalPanel(w, r)
 }

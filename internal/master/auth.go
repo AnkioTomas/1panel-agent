@@ -118,9 +118,21 @@ func (s *Server) masterLoginPath() string {
 	return "/"
 }
 
-// redirectToMasterLogin 清掉 mp_node 后跳到主节点登录页（可选带 mp_return）。
+// redirectToMasterLogin 离开子节点回主节点。
+// 有暂存本机会话时直接恢复并进面板（或 mp_return），避免无意义重新登录；
+// 无暂存才落到登录页。
 func (s *Server) redirectToMasterLogin(w http.ResponseWriter, r *http.Request, mpReturn string) {
+	cookies := s.takeLocalSession()
 	clearNodeCookie(w)
+	if len(cookies) > 0 {
+		writePanelSessionCookies(w, cookies)
+		target := "/"
+		if mpReturn != "" {
+			target = mpReturn
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
 	target := s.masterLoginPath()
 	if mpReturn != "" {
 		target = target + "?mp_return=" + mpReturn
