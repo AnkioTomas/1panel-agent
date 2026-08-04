@@ -29,6 +29,10 @@ func main() {
 		if err := runAgent(os.Args[2:]); err != nil {
 			fatal(err)
 		}
+	case "update":
+		if err := runUpdate(os.Args[2:]); err != nil {
+			fatal(err)
+		}
 	case "uninstall":
 		if err := runUninstall(); err != nil {
 			fatal(err)
@@ -77,6 +81,39 @@ func runAgent(args []string) error {
 		return runAgentSetpwd(args[1:])
 	default:
 		return fmt.Errorf("unknown agent subcommand: %s", args[0])
+	}
+}
+
+// runUpdate 按本机角色自更新 1pm 二进制并重启对应服务。
+// Master：从 Release 拉最新；Agent：从已配置 Master 拉 /agent.bin。
+func runUpdate(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("update does not take arguments")
+	}
+	hasMaster := role.MasterPresent()
+	hasAgent := role.AgentPresent()
+	switch {
+	case hasMaster && hasAgent:
+		return fmt.Errorf("本机同时检测到 master 与 agent，拒绝更新；先执行: 1pm uninstall")
+	case hasMaster:
+		res, err := master.UpdateSelf(true)
+		if err != nil {
+			return err
+		}
+		if res.Skipped {
+			fmt.Printf("master already up to date (%s)\n", res.Tag)
+			return nil
+		}
+		fmt.Printf("master updated %s -> %s, restarting 1pm-master.service…\n", res.OldVersion, res.Tag)
+		return nil
+	case hasAgent:
+		if err := agent.UpdateSelf(true); err != nil {
+			return err
+		}
+		fmt.Printf("agent updated from master (was %s), restarting 1pm-agent.service…\n", buildinfo.Version)
+		return nil
+	default:
+		return fmt.Errorf("未检测到 1pm master 或 agent，无法更新")
 	}
 }
 
@@ -211,6 +248,7 @@ func usage() {
 
 Usage:
   1pm master                          start master
+  1pm update                          update local 1pm (master←Release / agent←Master) and restart
   1pm uninstall                       auto-detect and uninstall master and/or agent
 
   1pm agent install <host:port> <token> [--name NAME] [--group GROUP]

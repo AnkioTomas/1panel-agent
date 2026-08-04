@@ -10,6 +10,7 @@
 1pm <command>
 
   master                 启动 Master（takeover + 监听原面板端口）
+  update                 按本机角色自更新 1pm 并重启对应服务
   agent install …        安装时写入配置（不启动长连接）
   agent run              用已有配置启动 Agent
   agent setpwd […]      设置本机 1Panel 密码（AES-GCM 加密存储）
@@ -33,6 +34,26 @@
 ```
 
 systemd：`ExecStart=/usr/local/bin/1pm master`
+
+---
+
+## 1pm update
+
+无额外参数。按本机已安装角色更新二进制并重启服务：
+
+| 角色   | 来源                                                                       | 重启单元             |
+|--------|----------------------------------------------------------------------------|----------------------|
+| Master | GitHub Release（沿用 `master.json` 里安装时的 `GITHUB_*` / `INSTALL_CDN`） | `1pm-master.service` |
+| Agent  | 已配置 Master 的 `/agent.bin`                                              | `1pm-agent.service`  |
+
+Master 已是最新 tag 时跳过下载与重启。可用环境变量 `VERSION=vX.Y.Z` 固定 Master 目标版本。
+
+```bash
+1pm update
+VERSION=v0.1.0 1pm update   # 仅 Master：钉死 Release tag
+```
+
+建议顺序：先在主节点 `1pm update`，再在管理页「更新子节点 1pm」，或各子节点自行 `1pm update`。
 
 ---
 

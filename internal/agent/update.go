@@ -30,24 +30,38 @@ func (c *Client) handleUpdate(stream *smux.Stream, body io.Reader) {
 	c.writeJSON(stream, map[string]any{"ok": true, "version": buildinfo.Version})
 
 	// 先回包再重启，避免 Master 读不到结果。
-	go func() {
-		time.Sleep(800 * time.Millisecond)
-		cmd := exec.Command("systemctl", "restart", "1pm-agent.service")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("agent restart after update: %v (%s)", err, string(out))
-		}
-	}()
+	go restartAgentUnit()
+}
+
+// UpdateSelf 从已配置 Master 拉取 /agent.bin，替换本机二进制；restart 为 true 时异步重启 agent 服务。
+func UpdateSelf(restart bool) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w (run agent install first)", err)
+	}
+	if err := downloadAndReplaceBinary(cfg); err != nil {
+		return err
+	}
+	if restart {
+		go restartAgentUnit()
+	}
+	return nil
+}
+
+func restartAgentUnit() {
+	time.Sleep(800 * time.Millisecond)
+	cmd := exec.Command("systemctl", "restart", "1pm-agent.service")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("agent restart after update: %v (%s)", err, string(out))
+	}
 }
 
 // replaceBinaryFrom 把 r 写成可执行文件并替换本机二进制。
 // r 读到 0 字节时回退到 HTTP 下载（旧 Master 只发空 body）。
 func (c *Client) replaceBinaryFrom(r io.Reader) error {
-	exe, err := os.Executable()
+	exe, err := currentExe()
 	if err != nil {
-		exe = "/usr/local/bin/1pm"
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
+		return err
 	}
 
 	dir := filepath.Dir(exe)
@@ -69,7 +83,7 @@ func (c *Client) replaceBinaryFrom(r io.Reader) error {
 
 	if n == 0 {
 		_ = os.Remove(tmpName)
-		return c.downloadAndReplaceBinary()
+		return downloadAndReplaceBinary(c.Cfg)
 	}
 
 	if err := os.Chmod(tmpName, 0o755); err != nil {
@@ -82,20 +96,20 @@ func (c *Client) replaceBinaryFrom(r io.Reader) error {
 	return nil
 }
 
-func (c *Client) downloadAndReplaceBinary() error {
-	if c.Cfg.Master == "" || c.Cfg.Token == "" {
+func downloadAndReplaceBinary(cfg *config.Agent) error {
+	if cfg == nil || cfg.Master == "" || cfg.Token == "" {
 		return fmt.Errorf("master/token missing")
 	}
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	sign := config.Sign(c.Cfg.Token, ts)
+	sign := config.Sign(cfg.Token, ts)
 	scheme := "http"
-	if c.Cfg.MasterTLS {
+	if cfg.MasterTLS {
 		scheme = "https"
 	}
-	url := fmt.Sprintf("%s://%s/agent.bin?timestamp=%s&sign=%s", scheme, c.Cfg.Master, ts, sign)
+	url := fmt.Sprintf("%s://%s/agent.bin?timestamp=%s&sign=%s", scheme, cfg.Master, ts, sign)
 
 	client := &http.Client{Timeout: 3 * time.Minute}
-	if c.Cfg.MasterTLS {
+	if cfg.MasterTLS {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -110,12 +124,9 @@ func (c *Client) downloadAndReplaceBinary() error {
 		return fmt.Errorf("download status %d: %s", resp.StatusCode, string(b))
 	}
 
-	exe, err := os.Executable()
+	exe, err := currentExe()
 	if err != nil {
-		exe = "/usr/local/bin/1pm"
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
+		return err
 	}
 
 	dir := filepath.Dir(exe)
@@ -139,6 +150,17 @@ func (c *Client) downloadAndReplaceBinary() error {
 	if err := os.Rename(tmpName, exe); err != nil {
 		return fmt.Errorf("replace binary: %w", err)
 	}
-	log.Printf("agent binary updated from master %s (was %s)", c.Cfg.Master, buildinfo.Version)
+	log.Printf("agent binary updated from master %s (was %s)", cfg.Master, buildinfo.Version)
 	return nil
+}
+
+func currentExe() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "/usr/local/bin/1pm", nil
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return exe, nil
 }
