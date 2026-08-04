@@ -233,7 +233,9 @@ func ApplyHeader(dst http.Header, src map[string][]string) {
 // SmuxConfig 返回 Master/Agent 共用的 smux 配置，保证 KeepAlive 参数一致。
 func SmuxConfig() *smux.Config {
 	cfg := smux.DefaultConfig()
-	cfg.KeepAliveInterval = 20 * time.Second
-	cfg.KeepAliveTimeout = 60 * time.Second
+	cfg.KeepAliveInterval = 15 * time.Second
+	// 大文件经隧道推送时写窗口可能短暂阻塞；60s 太短，会误杀会话。
+	cfg.KeepAliveTimeout = 180 * time.Second
+	cfg.MaxStreamBuffer = 1 << 20 // 1MiB，加快二进制推送
 	return cfg
 }

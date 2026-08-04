@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,57 +23,149 @@ type updateResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// handleForceUpdate 经隧道把本机二进制推给所有在线 Agent，替换后重启。
-// 不再让 Agent 回头 HTTP 拉 /agent.bin——那会空置 smux 流，慢链路/NAT 下必超时。
+type forceUpdateStatus struct {
+	Running bool           `json:"running"`
+	Total   int            `json:"total"`
+	OK      int            `json:"ok"`
+	Results []updateResult `json:"results,omitempty"`
+	Error   string         `json:"error,omitempty"`
+	Started time.Time      `json:"started,omitempty"`
+	DoneAt  time.Time      `json:"done_at,omitempty"`
+}
+
+// handleForceUpdate 异步经隧道推送本机二进制。
+// POST：立刻返回 accepted，后台推送（避免浏览器/反代把长传当成超时）。
+// GET：查询最近一次任务状态。
 func (s *Server) handleForceUpdate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		s.writeForceUpdateStatus(w)
+		return
+	case http.MethodPost:
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	list := s.reg.List()
+	jobs := make([]struct {
+		info AgentInfo
+		sess *Session
+	}, 0, len(list))
+	offline := make([]updateResult, 0)
+	for _, a := range list {
+		sess, ok := s.reg.Get(a.ID)
+		if !ok {
+			offline = append(offline, updateResult{ID: a.ID, Name: a.DisplayName(), OK: false, Error: "offline"})
+			continue
+		}
+		jobs = append(jobs, struct {
+			info AgentInfo
+			sess *Session
+		}{a, sess})
+	}
+
+	s.updateMu.Lock()
+	if s.updateStatus.Running {
+		st := s.snapshotForceUpdateLocked()
+		s.updateMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      false,
+			"message": "update already running",
+			"status":  st,
+		})
+		return
+	}
+	s.updateStatus = forceUpdateStatus{
+		Running: true,
+		Total:   len(jobs) + len(offline),
+		Started: time.Now(),
+		Results: append([]updateResult{}, offline...),
+	}
+	s.updateMu.Unlock()
+
+	go s.runForceUpdate(jobs)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":             true,
+		"accepted":       true,
+		"master_version": buildinfo.Version,
+		"total":          len(jobs) + len(offline),
+		"dispatched":     len(jobs),
+		"message":        "update dispatched; poll GET /__mp/api/force-update",
+	})
+}
+
+func (s *Server) writeForceUpdateStatus(w http.ResponseWriter) {
+	s.updateMu.Lock()
+	st := s.snapshotForceUpdateLocked()
+	s.updateMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+func (s *Server) snapshotForceUpdateLocked() forceUpdateStatus {
+	out := s.updateStatus
+	if out.Results != nil {
+		cp := make([]updateResult, len(out.Results))
+		copy(cp, out.Results)
+		out.Results = cp
+	}
+	return out
+}
+
+func (s *Server) runForceUpdate(jobs []struct {
+	info AgentInfo
+	sess *Session
+}) {
+	defer func() {
+		s.updateMu.Lock()
+		s.updateStatus.Running = false
+		s.updateStatus.DoneAt = time.Now()
+		okN := 0
+		for _, r := range s.updateStatus.Results {
+			if r.OK {
+				okN++
+			}
+		}
+		s.updateStatus.OK = okN
+		s.updateMu.Unlock()
+	}()
+
 	f, size, err := openSelfBinary()
 	if err != nil {
-		http.Error(w, "open binary: "+err.Error(), http.StatusInternalServerError)
+		s.updateMu.Lock()
+		s.updateStatus.Error = "open binary: " + err.Error()
+		s.updateStatus.Running = false
+		s.updateStatus.DoneAt = time.Now()
+		s.updateMu.Unlock()
+		log.Printf("force-update: %v", err)
 		return
 	}
 	_ = f.Close()
 
-	list := s.reg.List()
-	results := make([]updateResult, len(list))
 	var wg sync.WaitGroup
-	for i, a := range list {
-		sess, ok := s.reg.Get(a.ID)
-		if !ok {
-			results[i] = updateResult{ID: a.ID, Name: a.DisplayName(), OK: false, Error: "offline"}
-			continue
-		}
+	for _, job := range jobs {
 		wg.Add(1)
-		go func(i int, info AgentInfo, sess *Session) {
+		go func(info AgentInfo, sess *Session) {
 			defer wg.Done()
-			// 每条流各自打开文件，避免并发达竞争同一 *os.File 游标。
 			err := pushAgentUpdate(sess, size, openSelfBinaryReader)
 			res := updateResult{ID: info.ID, Name: info.DisplayName(), OK: err == nil}
 			if err != nil {
 				res.Error = err.Error()
+				log.Printf("force-update %s (%s): %v", info.DisplayName(), info.ID, err)
+			} else {
+				log.Printf("force-update %s (%s): ok", info.DisplayName(), info.ID)
 			}
-			results[i] = res
-		}(i, a, sess)
+			s.updateMu.Lock()
+			s.updateStatus.Results = append(s.updateStatus.Results, res)
+			s.updateMu.Unlock()
+		}(job.info, job.sess)
 	}
 	wg.Wait()
-
-	okN := 0
-	for _, r := range results {
-		if r.OK {
-			okN++
-		}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"master_version": buildinfo.Version,
-		"total":          len(results),
-		"ok":             okN,
-		"results":        results,
-	})
 }
 
 func openSelfBinary() (*os.File, int64, error) {
@@ -109,7 +202,8 @@ func pushAgentUpdate(sess *Session, size int64, open func() (io.ReadCloser, erro
 		return fmt.Errorf("open stream: %w", err)
 	}
 	defer stream.Close()
-	_ = stream.SetDeadline(time.Now().Add(5 * time.Minute))
+	// 大二进制 + 慢链路：读写共用绝对 deadline，期间靠 smux keepalive 保活会话。
+	_ = stream.SetDeadline(time.Now().Add(10 * time.Minute))
 
 	meta := &protocol.RequestMeta{
 		Type:   protocol.StreamTypeUpdate,

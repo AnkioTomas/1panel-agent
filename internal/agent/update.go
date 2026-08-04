@@ -21,6 +21,7 @@ import (
 // handleUpdate 响应 Master 强制更新：优先从隧道 body 接收二进制；
 // body 为空则回退 HTTP 拉 /agent.bin（兼容旧 Master）。
 func (c *Client) handleUpdate(stream *smux.Stream, body io.Reader) {
+	_ = stream.SetDeadline(time.Now().Add(10 * time.Minute))
 	if err := c.replaceBinaryFrom(body); err != nil {
 		log.Printf("agent update failed: %v", err)
 		c.writeErr(stream, http.StatusBadGateway, err.Error())

@@ -41,6 +41,9 @@ type Server struct {
 	// 切到子节点时暂存的本机面板会话；不落盘。Agent Cookie 不在此列。
 	localSessMu      sync.Mutex
 	localSessCookies []*http.Cookie
+
+	updateMu     sync.Mutex
+	updateStatus forceUpdateStatus
 }
 
 // New 加载 Master 状态、接管 1Panel 端口并构造 Server。

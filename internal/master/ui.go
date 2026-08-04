@@ -654,24 +654,55 @@ function updateMaster(){
 function forceUpdate(){
   if(!confirm('将把所有在线子节点更新为当前主节点 1pm 二进制并重启服务。继续？')) return;
   const btn=document.getElementById('btnForceUpdate');
-  btn.disabled=true; btn.textContent='更新中…';
+  btn.disabled=true; btn.textContent='下发中…';
   fetch('/__mp/api/force-update',{method:'POST',credentials:'include'}).then(r=>{
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
+    return r.json().then(data=>{
+      if(r.status===409) throw new Error(data.message||'更新任务进行中');
+      if(!r.ok || data.ok===false) throw new Error(data.message||('HTTP '+r.status));
+      return data;
+    });
   }).then(data=>{
-    const total=data.total||0, ok=data.ok||0;
-    const fails=(data.results||[]).filter(x=>!x.ok);
-    if(fails.length){
-      const msg=fails.map(x=>(x.name||x.id)+': '+(x.error||'fail')).join('\n');
-      alert('完成 '+ok+'/'+total+'\n失败:\n'+msg);
-    }else{
-      showToast('已同步更新 '+ok+' 个节点');
-    }
-    setTimeout(refreshAgents, 2000);
+    btn.textContent='推送中…';
+    showToast('已向 '+(data.dispatched||0)+' 个节点下发更新');
+    return pollForceUpdate(btn);
   }).catch(e=>{
     alert('更新子节点 1pm 失败: '+(e&&e.message?e.message:e));
-  }).finally(()=>{
     btn.disabled=false; btn.textContent='更新子节点 1pm';
+  });
+}
+function pollForceUpdate(btn){
+  let n=0;
+  return new Promise(function(resolve, reject){
+    function tick(){
+      fetch('/__mp/api/force-update',{credentials:'include'}).then(r=>{
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        return r.json();
+      }).then(st=>{
+        if(st.running){
+          n++;
+          btn.textContent='推送中…('+(st.results||[]).length+'/'+(st.total||'?')+')';
+          if(n>600) throw new Error('等待更新结果超时');
+          setTimeout(tick, 1000);
+          return;
+        }
+        const total=st.total||0, ok=st.ok||0;
+        const fails=(st.results||[]).filter(x=>!x.ok);
+        if(st.error) throw new Error(st.error);
+        if(fails.length){
+          const msg=fails.map(x=>(x.name||x.id)+': '+(x.error||'fail')).join('\n');
+          alert('完成 '+ok+'/'+total+'\n失败:\n'+msg);
+        }else{
+          showToast('已同步更新 '+ok+' 个节点');
+        }
+        btn.disabled=false; btn.textContent='更新子节点 1pm';
+        setTimeout(refreshAgents, 2000);
+        resolve(st);
+      }).catch(e=>{
+        btn.disabled=false; btn.textContent='更新子节点 1pm';
+        reject(e);
+      });
+    }
+    setTimeout(tick, 800);
   });
 }
 function upgradePanelMaster(){
