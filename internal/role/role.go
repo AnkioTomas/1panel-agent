@@ -24,20 +24,10 @@ func AgentPresent() bool {
 	return fileExists(AgentUnit) || fileExists(AgentState)
 }
 
-// ErrAgentConflict 表示本机已是 Agent，不能再装/跑 Master。
-func ErrAgentConflict() error {
-	return fmt.Errorf("本机已安装 1pm agent，不能同时作为 master；先执行: 1pm uninstall")
-}
-
-// ErrMasterConflict 表示本机已是 Master，不能再装/跑 Agent。
-func ErrMasterConflict() error {
-	return fmt.Errorf("本机已安装 1pm master，不能同时作为 agent；先执行: 1pm uninstall")
-}
-
 // RefuseMasterIfAgent 若已装 Agent 则拒绝安装/启动 Master。
 func RefuseMasterIfAgent() error {
 	if AgentPresent() {
-		return ErrAgentConflict()
+		return fmt.Errorf("本机已安装 1pm agent，不能同时作为 master；先执行: 1pm uninstall")
 	}
 	return nil
 }
@@ -45,7 +35,7 @@ func RefuseMasterIfAgent() error {
 // RefuseAgentIfMaster 若已装 Master 则拒绝安装/启动 Agent。
 func RefuseAgentIfMaster() error {
 	if MasterPresent() {
-		return ErrMasterConflict()
+		return fmt.Errorf("本机已安装 1pm master，不能同时作为 agent；先执行: 1pm uninstall")
 	}
 	return nil
 }

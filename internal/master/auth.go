@@ -53,11 +53,7 @@ func (s *Server) validAuthCookie(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(secret)) == 1
 }
 
-// localPanelLoggedIn 代理向本地 1Panel 接口确认访问者是否已拥有合法的 1Panel 登录态。
-func (s *Server) localPanelLoggedIn(r *http.Request) bool {
-	return s.localPanelCodeOK(r.Header.Get("Cookie"))
-}
-
+// localPanelCodeOK 向本地 1Panel 确认 Cookie 是否仍为有效登录态。
 func (s *Server) localPanelCodeOK(cookieHeader string) bool {
 	if s.LocalPanel == "" || cookieHeader == "" {
 		return false
@@ -88,7 +84,7 @@ func (s *Server) ensureMPAuth(w http.ResponseWriter, r *http.Request, path strin
 	if s.validAuthCookie(r) {
 		return true
 	}
-	if s.localPanelLoggedIn(r) {
+	if s.localPanelCodeOK(r.Header.Get("Cookie")) {
 		s.issueAuthCookie(w)
 		return true
 	}
