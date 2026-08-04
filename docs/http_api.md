@@ -125,6 +125,25 @@ Master 检测到面板 `server.crt`/`server.key` 可加载时（路径 `{1pctl B
 }
 ```
 
+### POST /__mp/api/upgrade-panel-master
+
+用当前浏览器面板会话对本机 1Panel 调同一套官方升级 API。已最新则 `skipped: true`。
+
+```json
+{"ok":true,"skipped":true,"message":"already up to date"}
+```
+
+### POST /__mp/api/panel-ssl
+
+批量开关主节点 + 在线子节点面板自签 SSL，并同步 Agent `master_tls`。
+
+```json
+{"enable": true}
+```
+
+开启顺序：主节点 SSL → 等证书就绪 → 推 `master_tls=true` → 推子节点本机 SSL。  
+关闭顺序：主节点关 SSL → 等证书消失 → 推 `master_tls=false` → 关子节点本机 SSL。
+
 ### GET /__mp/go/{id}
 
 Agent 须在线；写 `mp_node` 后 302 到安全入口。自动登录发生在后续隧道请求的 **Agent 侧**。

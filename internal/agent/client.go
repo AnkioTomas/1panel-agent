@@ -37,6 +37,9 @@ type Client struct {
 	sessMu      sync.Mutex
 	sessCookies []*http.Cookie
 	sessUntil   time.Time
+
+	muxMu sync.Mutex
+	mux   *smux.Session
 }
 
 // Run 启动 Agent 客户端逻辑，维持与 Master 的长连接并处理自动重连。
@@ -134,6 +137,8 @@ func (c *Client) connectOnce() error {
 		return fmt.Errorf("smux client: %w", err)
 	}
 	defer session.Close()
+	c.setSession(session)
+	defer c.setSession(nil)
 
 	log.Printf("connected to master %s as %s", c.Cfg.Master, c.Cfg.ID)
 	for {
@@ -165,8 +170,26 @@ func (c *Client) handleStream(stream *smux.Stream) {
 		c.handleUpdate(stream, body)
 	case protocol.StreamTypePanelUpgrade:
 		c.handlePanelUpgrade(stream, body)
+	case protocol.StreamTypePanelControl:
+		c.handlePanelControl(stream, body)
 	default:
 		c.handleHTTP(stream, meta, body)
+	}
+}
+
+func (c *Client) setSession(sess *smux.Session) {
+	c.muxMu.Lock()
+	c.mux = sess
+	c.muxMu.Unlock()
+}
+
+func (c *Client) closeSession() {
+	c.muxMu.Lock()
+	sess := c.mux
+	c.mux = nil
+	c.muxMu.Unlock()
+	if sess != nil {
+		_ = sess.Close()
 	}
 }
 

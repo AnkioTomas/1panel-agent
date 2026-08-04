@@ -210,7 +210,7 @@ function renderPop(btn, agents){
     }
   }
   html+='<div class="mp-ns-sep"></div>';
-  html+=menuItem('data-mp="manage"', "manage", "管理节点", "安装 / 更新 / 分组", false, "");
+  html+=menuItem('data-mp="manage"', "manage", "节点管理", "安装 / 更新 / SSL", false, "");
   html+=menuItem('data-mp="logout"', "logout", "退出登录", "", false, "is-danger");
   pop.innerHTML=html;
   document.body.appendChild(pop);

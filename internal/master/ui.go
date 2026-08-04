@@ -52,6 +52,12 @@ func (s *Server) handleMP(w http.ResponseWriter, r *http.Request) {
 	case "/api/upgrade-panel":
 		s.handleUpgradePanel(w, r)
 		return
+	case "/api/upgrade-panel-master":
+		s.handleUpgradePanelMaster(w, r)
+		return
+	case "/api/panel-ssl":
+		s.handlePanelSSL(w, r)
+		return
 	}
 
 	if path == "" || path == "/" {
@@ -188,7 +194,7 @@ var nodesTmpl = template.Must(template.New("nodes").Parse(`<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>多机节点 - 1Panel</title>
+<title>节点管理 - 1Panel</title>
 <script>
 (function(){
   function panelTheme(){
@@ -332,6 +338,8 @@ body{
 }
 .card-hd h2{margin:0;font-size:15px;font-weight:600;color:var(--el-text-color-primary)}
 .card-bd{padding:18px}
+.section-title{margin:18px 0 10px;font-size:14px;font-weight:600;color:var(--el-text-color-primary)}
+.section-title:first-of-type{margin-top:4px}
 .field{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1}
 .field > span{font-size:12px;color:var(--el-text-color-secondary)}
 .field input,.mp-input{
@@ -397,7 +405,7 @@ tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
       <path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v4H3V6a1 1 0 0 1 1-1zm-1 7h18v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6zm3 2v2h2v-2H6zm4 0v2h2v-2h-2z"/>
     </svg>
-    <span>多机节点</span>
+    <span>节点管理</span>
   </div>
   <div class="device" title="宣告主机（PublicHost 或当前访问 Host）">
     <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm0 2a8 8 0 0 1 7.75 6H4.25A8 8 0 0 1 12 4zm0 16a8 8 0 0 1-7.75-6h15.5A8 8 0 0 1 12 20z"/></svg>
@@ -489,20 +497,34 @@ tr.group-row td{padding:10px 18px;background:var(--el-fill-color)!important;font
   </div>
 
   <div class="card">
-    <div class="card-hd"><h2>主节点</h2></div>
+    <div class="card-hd"><h2>节点管理</h2></div>
     <div class="card-bd">
       <p class="meta" style="margin:0 0 14px">
-        1pm <strong id="nodeVer">{{if .NodeVersion}}{{.NodeVersion}}{{else}}-{{end}}</strong>
+        当前节点 <strong>主节点</strong>
+        · 1pm <strong id="nodeVer">{{if .NodeVersion}}{{.NodeVersion}}{{else}}-{{end}}</strong>
         · 1Panel <strong>{{if .MasterVersion}}{{.MasterVersion}}{{else}}-{{end}}</strong>
         · 上游 {{.LocalPanel}}
+        · <a class="btn primary-panel" href="/__mp/local" style="margin-left:6px">切换回主节点 1Panel</a>
       </p>
+
+      <h3 class="section-title">1panel-Agent 管理面板</h3>
       <div class="actions">
-        <a class="btn primary-panel" href="/__mp/local">切换回主节点 1Panel</a>
-        <button class="btn plain" type="button" id="btnUpdateMaster" onclick="updateMaster()">更新主节点</button>
-        <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">强制更新子节点 1pm</button>
+        <button class="btn plain" type="button" id="btnUpdateMaster" onclick="updateMaster()">更新主节点 1pm</button>
+        <button class="btn plain" type="button" id="btnForceUpdate" onclick="forceUpdate()">更新子节点 1pm</button>
+      </div>
+
+      <h3 class="section-title">1Panel 更新</h3>
+      <div class="actions">
+        <button class="btn plain" type="button" id="btnUpgradePanelMaster" onclick="upgradePanelMaster()">更新主节点 1Panel</button>
         <button class="btn plain" type="button" id="btnUpgradePanel" onclick="upgradePanel()">更新子节点 1Panel</button>
       </div>
-      <p class="meta" style="margin:14px 0 0">1pm：先「更新主节点」再「强制更新子节点 1pm」。1Panel：Agent 自动登录后调用官方升级 API（已最新则跳过）。面板开启 SSL 后 Master 自动继承 <code>{BASE_DIR}/1panel/secret</code> 证书（从 1pctl 读 BASE_DIR；HTTP→HTTPS）；子节点需用新安装命令（含 master_tls）或改 agent.json 后重启。</p>
+
+      <h3 class="section-title">1Panel SSL</h3>
+      <div class="actions">
+        <button class="btn plain" type="button" id="btnSSLOn" onclick="panelSSL(true)">全部开启 SSL</button>
+        <button class="btn plain" type="button" id="btnSSLOff" onclick="panelSSL(false)">全部关闭 SSL</button>
+      </div>
+      <p class="meta" style="margin:14px 0 0">1pm：先更新主节点再更新子节点。1Panel：调用官方升级 API（已最新则跳过）。SSL：自签证书，主节点先切换并同步子节点 master_tls；过程会短暂重启面板。</p>
     </div>
   </div>
 </div>
@@ -625,8 +647,8 @@ function updateMaster(){
     showToast('主节点已更新至 '+(data.tag||'')+'，正在重启…');
     setTimeout(function(){ location.reload(); }, 2500);
   }).catch(e=>{
-    alert('更新主节点失败: '+(e&&e.message?e.message:e));
-    btn.disabled=false; btn.textContent='更新主节点';
+    alert('更新主节点 1pm 失败: '+(e&&e.message?e.message:e));
+    btn.disabled=false; btn.textContent='更新主节点 1pm';
   });
 }
 function forceUpdate(){
@@ -647,9 +669,30 @@ function forceUpdate(){
     }
     setTimeout(refreshAgents, 2000);
   }).catch(e=>{
-    alert('强制更新失败: '+(e&&e.message?e.message:e));
+    alert('更新子节点 1pm 失败: '+(e&&e.message?e.message:e));
   }).finally(()=>{
-    btn.disabled=false; btn.textContent='强制更新子节点 1pm';
+    btn.disabled=false; btn.textContent='更新子节点 1pm';
+  });
+}
+function upgradePanelMaster(){
+  if(!confirm('将对本机 1Panel 触发官方升级（已最新则跳过；升级会重启面板）。继续？')) return;
+  const btn=document.getElementById('btnUpgradePanelMaster');
+  btn.disabled=true; btn.textContent='升级中…';
+  fetch('/__mp/api/upgrade-panel-master',{method:'POST',credentials:'include'}).then(r=>{
+    return r.json().then(data=>{
+      if(!r.ok || data.ok===false) throw new Error(data.message||('HTTP '+r.status));
+      return data;
+    });
+  }).then(data=>{
+    if(data.skipped){
+      showToast(data.message||'主节点 1Panel 已是最新');
+    }else{
+      showToast('主节点 1Panel 升级已开始 '+(data.target_version||'')+'，请稍后刷新');
+    }
+  }).catch(e=>{
+    alert('更新主节点 1Panel 失败: '+(e&&e.message?e.message:e));
+  }).finally(()=>{
+    btn.disabled=false; btn.textContent='更新主节点 1Panel';
   });
 }
 function upgradePanel(){
@@ -669,13 +712,58 @@ function upgradePanel(){
     if((data.results||[]).some(x=>!x.ok)){
       alert('完成 '+ok+'/'+total+'\n'+lines.join('\n'));
     }else{
-      showToast('1Panel 升级完成 '+ok+'/'+total);
+      showToast('子节点 1Panel 升级完成 '+ok+'/'+total);
     }
     setTimeout(refreshAgents, 5000);
   }).catch(e=>{
     alert('更新子节点 1Panel 失败: '+(e&&e.message?e.message:e));
   }).finally(()=>{
     btn.disabled=false; btn.textContent='更新子节点 1Panel';
+  });
+}
+function panelSSL(enable){
+  const tip=enable
+    ? '将为主节点与所有在线子节点开启面板自签 SSL，并同步 master_tls。面板会短暂重启。继续？'
+    : '将关闭主节点与所有在线子节点的面板 SSL，并同步 master_tls。面板会短暂重启。继续？';
+  if(!confirm(tip)) return;
+  const btnOn=document.getElementById('btnSSLOn');
+  const btnOff=document.getElementById('btnSSLOff');
+  const btn=enable?btnOn:btnOff;
+  btnOn.disabled=true; btnOff.disabled=true;
+  btn.textContent='处理中…';
+  fetch('/__mp/api/panel-ssl',{
+    method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enable:!!enable})
+  }).then(r=>{
+    return r.json().then(data=>{
+      if(!r.ok){
+        const m=(data.master_ssl&&data.master_ssl.error)||data.message||('HTTP '+r.status);
+        throw new Error(m);
+      }
+      return data;
+    });
+  }).then(data=>{
+    const fails=[];
+    function collect(arr,tag){
+      (arr||[]).forEach(function(x){
+        if(!x.ok) fails.push(tag+' '+(x.name||x.id)+': '+(x.error||'fail'));
+      });
+    }
+    if(data.master_ssl && !data.master_ssl.ok) fails.push('主节点 SSL: '+(data.master_ssl.error||'fail'));
+    collect(data.master_tls,'master_tls');
+    collect(data.agents_ssl,'ssl');
+    if(fails.length){
+      alert((enable?'开启':'关闭')+'部分失败:\n'+fails.join('\n'));
+    }else{
+      showToast(enable?'已全部开启 SSL':'已全部关闭 SSL');
+    }
+    setTimeout(function(){ location.reload(); }, 2000);
+  }).catch(e=>{
+    alert('SSL 操作失败: '+(e&&e.message?e.message:e));
+    btnOn.disabled=false; btnOff.disabled=false;
+    btnOn.textContent='全部开启 SSL';
+    btnOff.textContent='全部关闭 SSL';
   });
 }
 function displayName(a){
