@@ -59,7 +59,6 @@ systemd：`ExecStart=/usr/local/bin/1pm master`
 
 ```bash
 1pm agent install <host:port> <token> [--name NAME] [--group GROUP]
-1pm agent install <host:port>/<token> [--name NAME] [--group GROUP]
 ```
 
 也可用环境变量 `NODE_NAME` / `NODE_GROUP`。正常由 `/agent.sh` 调用；systemd 只跑 `agent run`。

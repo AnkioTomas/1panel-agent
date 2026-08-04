@@ -30,8 +30,6 @@ type Agent struct {
 	PanelUser        string `json:"panel_user,omitempty"`
 	PanelEntrance    string `json:"panel_entrance,omitempty"` // 安全入口路径段，自动探测
 	PanelPasswordEnc string `json:"panel_password_enc,omitempty"`
-	// PanelPassword 仅用于兼容旧版明文配置，Load 后会迁移为密文并清空。
-	PanelPassword string `json:"panel_password,omitempty"`
 }
 
 // Dir 返回 Agent 配置目录路径（~/.1panel-agent）。
@@ -52,7 +50,7 @@ func Path() (string, error) {
 	return filepath.Join(dir, fileName), nil
 }
 
-// Load 从磁盘读取并解析 Agent 配置；必要时迁移明文密码。
+// Load 从磁盘读取并解析 Agent 配置。
 func Load() (*Agent, error) {
 	path, err := Path()
 	if err != nil {
@@ -66,27 +64,10 @@ func Load() (*Agent, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	if err := migratePassword(&cfg); err != nil {
-		return nil, err
-	}
 	return &cfg, nil
 }
 
-// migratePassword 将旧版明文 panel_password 加密落盘。
-func migratePassword(cfg *Agent) error {
-	if cfg.PanelPassword == "" || cfg.PanelPasswordEnc != "" {
-		return nil
-	}
-	enc, err := EncryptSecret(cfg.PanelPassword)
-	if err != nil {
-		return err
-	}
-	cfg.PanelPasswordEnc = enc
-	cfg.PanelPassword = ""
-	return Save(cfg)
-}
-
-// Save 将 Agent 配置序列化并保存至磁盘（永不写回明文密码）。
+// Save 将 Agent 配置序列化并保存至磁盘。
 func Save(cfg *Agent) error {
 	if cfg.ID == "" {
 		id, err := newID()
@@ -95,7 +76,6 @@ func Save(cfg *Agent) error {
 		}
 		cfg.ID = id
 	}
-	cfg.PanelPassword = "" // 强制不落明文
 	dir, err := Dir()
 	if err != nil {
 		return err

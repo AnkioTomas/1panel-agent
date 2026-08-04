@@ -48,7 +48,6 @@ func SetPassword(plain string) error {
 		return err
 	}
 	cfg.PanelPasswordEnc = enc
-	cfg.PanelPassword = ""
 	if err := config.Save(cfg); err != nil {
 		return err
 	}

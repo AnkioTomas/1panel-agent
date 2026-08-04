@@ -9,11 +9,13 @@ type Agent struct {
     ID               string // 首次 Save 自动生成
     Master           string // host:port
     Token            string // 与 Master 共享的 HMAC 密钥
+    MasterTLS        bool   // Master 开面板 SSL 时用 wss
+    Name             string
+    Group            string
     PanelURL         string // 本机 1Panel，CLI 探测
     PanelUser        string
     PanelEntrance    string // 安全入口路径段，CLI 探测
     PanelPasswordEnc string // agent setpwd → AES-GCM
-    PanelPassword    string // 旧明文兼容；Load 后迁移并清空
 }
 ```
 
@@ -27,6 +29,9 @@ type Master struct {
     OriginalPort int    // takeover 前公网端口
     InternalPort int    // 1Panel 内部端口（仅 127.0.0.1）
     PublicHost   string // 可选；安装命令宣告地址，默认用请求 Host
+    GitHubAPI    string // 安装时 Release 源，供自更新复用
+    GitHubDL     string
+    InstallCDN   string // auto | global | cn
 }
 ```
 

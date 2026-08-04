@@ -73,4 +73,4 @@ Agent：
 
 - 安装命令在 Master 有证时用 `https://`，并写入 `master_tls`；连接走 `wss`（自签跳过校验）
 - **本机面板不对外、不开 SSL**：安装后与每次 `agent run` 检查并强制 `BindAddress=127.0.0.1` + SSL Disable
-- 旧 Agent 无 `master_tls` 仍用 `ws`，主节点开 SSL 后需重装或由管理页同步
+- 主节点开关 SSL 时通过 `master_tls` 同步；Agent 必须跟随，否则隧道连不上

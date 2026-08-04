@@ -161,8 +161,6 @@ func runAgentInstall(args []string) error {
 		opts.MasterTLS = true
 	}
 	switch len(positional) {
-	case 1:
-		return agent.InstallFromTarget(positional[0], opts)
 	case 2:
 		return agent.Install(positional[0], positional[1], opts)
 	default:
