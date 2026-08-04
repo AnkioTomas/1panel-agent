@@ -115,11 +115,6 @@ func runPanel(args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// LocalPanelURL 生成指定端口的本地 1Panel HTTP 地址。
-func LocalPanelURL(port int) string {
-	return fmt.Sprintf("http://127.0.0.1:%d", port)
-}
-
 // InternalPort 根据公网端口推算避免冲突的内部端口。
 func InternalPort(publicPort int) int {
 	// Prefer moving up by 10000; if that overflows, move down by 10000.

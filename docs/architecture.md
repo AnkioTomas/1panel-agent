@@ -15,17 +15,17 @@
 ## 整体架构
 
 ```text
-Browser ──HTTP──▶ Master (:原面板端口)
-                    │
+Browser ──HTTP/HTTPS──▶ Master (:原面板端口)
+                    │   （面板 secret 证书就绪时 cmux：HTTPS + HTTP→HTTPS）
                     ├─ /__mp/              节点管理 UI（本机 1Panel 登录态 → mp_auth）
-                    ├─ /agent/ws           Agent WebSocket（HMAC timestamp+sign）
+                    ├─ /agent/ws           Agent WebSocket（HMAC；TLS 时为 wss）
                     ├─ /agent.sh           签名安装脚本
                     ├─ /agent.bin          Master 自身二进制
                     ├─ mp_node 有效        → 根路径隧道反代 Agent 本机 1Panel
-                    └─ 默认               → 反代本机 1Panel（127.0.0.1:内部端口）
+                    └─ 默认               → 反代本机 1Panel（http(s)://127.0.0.1:内部端口）
 
-Agent ──WebSocket+HMAC──▶ Master /agent/ws
-         └─ smux ←── Master OpenStream（HTTP / WS / Stats）
+Agent ──ws/wss+HMAC──▶ Master /agent/ws
+         └─ smux ←── Master OpenStream（HTTP / WS / Stats / Update / PanelUpgrade）
 ```
 
 ---

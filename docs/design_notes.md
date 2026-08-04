@@ -56,3 +56,16 @@ Takeover 与 Agent 代理会争同一面板端口与职责。安装脚本与 `ro
 - **不**再包一层「检查 1Panel 更新」展示；列表只报当前版本。  
 - 1pm：主节点 `update-master`（Release），子节点 `force-update`（吃主节点 `/agent.bin`）。  
 - 1Panel：`upgrade-panel` 让 Agent **登录后**调官方 `/api/v2/core/settings/upgrade`（与面板 UI 同源）。
+
+## 11. 继承面板 SSL（不读 core.db）
+
+用户在 1Panel 开启面板证书后，文件落在 `{BASE_DIR}/1panel/secret/server.crt|.key`（1pctl 默认 `BASE_DIR=/opt`，即 `/opt/1panel/secret/`）；关闭 SSL 会删除这两个文件。
+
+Master：
+
+- 以证书**可加载**为准（不查 SQLite）
+- cmux：**有证** → HTTPS + HTTP `307` 跳转；**无证** → 明文 HTTP
+- `GetCertificate` + 约 5s 扫 mtime，热加载
+- 上游本机面板随证书变为 `https://127.0.0.1:<internal>`（自签跳过校验）
+
+Agent：安装命令在 Master 有证时用 `https://`，并写入 `master_tls`；连接走 `wss`（自签跳过校验）。旧 Agent 无该字段仍用 `ws`，开 SSL 后需重装或改 `agent.json`。

@@ -151,6 +151,8 @@ func runAgentInstall(args []string) error {
 				return fmt.Errorf("--group needs a value")
 			}
 			opts.Group = args[i]
+		case "--master-tls":
+			opts.MasterTLS = true
 		default:
 			if strings.HasPrefix(args[i], "-") {
 				return fmt.Errorf("unknown install flag: %s", args[i])
@@ -163,6 +165,9 @@ func runAgentInstall(args []string) error {
 	}
 	if opts.Group == "" {
 		opts.Group = os.Getenv("NODE_GROUP")
+	}
+	if !opts.MasterTLS && os.Getenv("MASTER_TLS") == "1" {
+		opts.MasterTLS = true
 	}
 	switch len(positional) {
 	case 1:

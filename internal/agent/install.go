@@ -33,8 +33,9 @@ func ParseInstallTarget(s string) (master, token string, err error) {
 
 // InstallOpts 是安装时可选的节点展示元数据。
 type InstallOpts struct {
-	Name  string
-	Group string
+	Name      string
+	Group     string
+	MasterTLS bool
 }
 
 // Install 在安装时写入 Master/Token，并自动探测本机 1Panel 地址与用户名。
@@ -58,6 +59,7 @@ func Install(master, token string, opts InstallOpts) error {
 	AutofillPanel(cfg)
 	cfg.Master = master
 	cfg.Token = token
+	cfg.MasterTLS = opts.MasterTLS
 	cfg.Name = config.SanitizeMeta(opts.Name)
 	cfg.Group = config.SanitizeMeta(opts.Group)
 	return config.Save(cfg)

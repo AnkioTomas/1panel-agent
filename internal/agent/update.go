@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -57,9 +58,18 @@ func (c *Client) downloadAndReplaceBinary() error {
 	}
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sign := config.Sign(c.Cfg.Token, ts)
-	url := fmt.Sprintf("http://%s/agent.bin?timestamp=%s&sign=%s", c.Cfg.Master, ts, sign)
+	scheme := "http"
+	if c.Cfg.MasterTLS {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s/agent.bin?timestamp=%s&sign=%s", scheme, c.Cfg.Master, ts, sign)
 
 	client := &http.Client{Timeout: 3 * time.Minute}
+	if c.Cfg.MasterTLS {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)

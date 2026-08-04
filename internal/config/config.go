@@ -25,8 +25,9 @@ type Agent struct {
 	ID               string `json:"id"`
 	Master           string `json:"master"` // host:port
 	Token            string `json:"token"`
-	Name             string `json:"name,omitempty"`  // 展示名；空则用系统 hostname
-	Group            string `json:"group,omitempty"` // 分组；空则未分组
+	MasterTLS        bool   `json:"master_tls,omitempty"` // Master 继承面板 SSL 时用 wss/https
+	Name             string `json:"name,omitempty"`       // 展示名；空则用系统 hostname
+	Group            string `json:"group,omitempty"`      // 分组；空则未分组
 	PanelURL         string `json:"panel_url,omitempty"`
 	PanelUser        string `json:"panel_user,omitempty"`
 	PanelEntrance    string `json:"panel_entrance,omitempty"` // 安全入口路径段，自动探测

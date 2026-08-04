@@ -3,6 +3,7 @@ package master
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -30,7 +31,8 @@ type Server struct {
 	PublicHost    string // 可选 NAT 对外 host[:port]；空则用请求 Host
 	Entrance      string // 1Panel 安全入口路径段
 	PanelUser     string // 本机 1Panel 用户名（展示用）
-	LocalPanel    string // 内部避让地址，形如 http://127.0.0.1:<internal>
+	LocalPanel    string // 内部避让地址，形如 http(s)://127.0.0.1:<internal>
+	InternalPort  int    // 本机 1Panel 避让端口
 	sessionSecret string // 内存 Web Session Secret（绝不上盘）
 	reg           *Registry
 	localProxy    *httputil.ReverseProxy
@@ -69,29 +71,47 @@ func New() (*Server, error) {
 	}
 
 	s := &Server{
-		Listen:     listen,
-		Token:      state.Token,
-		PublicHost: state.PublicHost,
-		Entrance:   entrance,
-		PanelUser:  panelUser,
-		LocalPanel: localPanel,
-		reg:        NewRegistry(),
+		Listen:       listen,
+		Token:        state.Token,
+		PublicHost:   state.PublicHost,
+		Entrance:     entrance,
+		PanelUser:    panelUser,
+		LocalPanel:   localPanel,
+		InternalPort: internal,
+		reg:          NewRegistry(),
 	}
-	if s.LocalPanel != "" {
-		u, err := url.Parse(s.LocalPanel)
-		if err != nil {
-			return nil, fmt.Errorf("parse local_panel url: %w", err)
-		}
-		s.localProxy = httputil.NewSingleHostReverseProxy(u)
-		s.localProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, "local 1Panel unavailable: "+err.Error(), http.StatusBadGateway)
-		}
-		s.wrapLocalProxy()
-	}
+	s.rebuildLocalProxy()
 	return s, nil
 }
 
-// Run 注册路由并阻塞监听；返回 ListenAndServe 的错误。
+// rebuildLocalProxy 按当前 LocalPanel（含 https）重建反代。
+func (s *Server) rebuildLocalProxy() {
+	if s.LocalPanel == "" {
+		s.localProxy = nil
+		return
+	}
+	u, err := url.Parse(s.LocalPanel)
+	if err != nil {
+		log.Printf("warn: parse local_panel url: %v", err)
+		return
+	}
+	rp := httputil.NewSingleHostReverseProxy(u)
+	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		http.Error(w, "local 1Panel unavailable: "+err.Error(), http.StatusBadGateway)
+	}
+	if u.Scheme == "https" {
+		rp.Transport = &http.Transport{
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // 本机面板常自签
+			MaxIdleConns:        32,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
+	}
+	s.localProxy = rp
+	s.wrapLocalProxy()
+}
+
+// Run 注册路由并阻塞监听（面板证书可用时自动 HTTPS Mux）。
 func (s *Server) Run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/ws", s.handleAgentWS)
@@ -99,14 +119,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/agent.bin", s.handleAgentBinary)
 	mux.HandleFunc("/__mp/", s.handleMP)
 	mux.HandleFunc("/", s.handleRoot)
-
-	srv := &http.Server{
-		Addr:              s.Listen,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	log.Printf("master listening on %s (local panel=%s entrance=%s)", s.Listen, s.LocalPanel, s.Entrance)
-	return srv.ListenAndServe()
+	return s.listenAndServe(mux)
 }
 
 // handleRoot 处理根路径：有 mp_node 则走 Agent 隧道，否则反代本机 1Panel。

@@ -59,14 +59,16 @@ func TestAgentInstallScript(t *testing.T) {
 	var buf bytes.Buffer
 	err := agentInstallTmpl.Execute(&buf, struct {
 		Base, Master, Token, Name, Group, GOOS, GOARCH string
+		MasterTLS                                      bool
 	}{
-		Base:   "http://10.211.55.14:52045",
-		Master: "10.211.55.14:52045",
-		Token:  "secret",
-		Name:   "web-1",
-		Group:  "prod",
-		GOOS:   "linux",
-		GOARCH: "arm64",
+		Base:      "http://10.211.55.14:52045",
+		Master:    "10.211.55.14:52045",
+		Token:     "secret",
+		MasterTLS: true,
+		Name:      "web-1",
+		Group:     "prod",
+		GOOS:      "linux",
+		GOARCH:    "arm64",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +81,9 @@ func TestAgentInstallScript(t *testing.T) {
 		"agent install",
 		`--name "$NODE_NAME"`,
 		`--group "$NODE_GROUP"`,
+		"--master-tls",
+		"MASTER_TLS=1",
+		"CURL_TLS",
 		"ask_panel_password",
 		"save_panel_password",
 		"agent setpwd",

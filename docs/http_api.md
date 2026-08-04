@@ -73,6 +73,8 @@ Master 自身二进制；响应头 `X-1pm-GOOS` / `X-1pm-GOARCH`。
 
 「复制命令」会先调本接口再写入剪贴板。
 
+Master 检测到面板 `server.crt`/`server.key` 可加载时（默认 `/opt/1panel/secret`），安装 URL 使用 `https://`，外层 curl 带 `-k`，脚本带 `--master-tls`（Agent 走 wss，自签跳过校验）。
+
 ### POST /__mp/api/rotate-token
 
 轮换 Token；旧 Agent 全部失效。响应含新的 `install` 命令。

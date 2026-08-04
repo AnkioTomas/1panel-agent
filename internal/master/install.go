@@ -34,22 +34,25 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := s.AdvertiseHost(r)
+	scheme := s.PublicScheme()
 	data := struct {
-		Base   string
-		Master string
-		Token  string
-		Name   string
-		Group  string
-		GOOS   string
-		GOARCH string
+		Base      string
+		Master    string
+		Token     string
+		MasterTLS bool
+		Name      string
+		Group     string
+		GOOS      string
+		GOARCH    string
 	}{
-		Base:   "http://" + host,
-		Master: host,
-		Token:  s.currentToken(),
-		Name:   config.SanitizeMeta(r.URL.Query().Get("name")),
-		Group:  config.SanitizeMeta(r.URL.Query().Get("group")),
-		GOOS:   runtime.GOOS,
-		GOARCH: runtime.GOARCH,
+		Base:      scheme + "://" + host,
+		Master:    host,
+		Token:     s.currentToken(),
+		MasterTLS: scheme == "https",
+		Name:      config.SanitizeMeta(r.URL.Query().Get("name")),
+		Group:     config.SanitizeMeta(r.URL.Query().Get("group")),
+		GOOS:      runtime.GOOS,
+		GOARCH:    runtime.GOARCH,
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -103,7 +106,11 @@ func (s *Server) InstallCommand(r *http.Request) string {
 	if group := config.SanitizeMeta(r.URL.Query().Get("group")); group != "" {
 		q.Set("group", group)
 	}
-	return fmt.Sprintf(`curl -fsSL "http://%s/agent.sh?%s" | sudo bash`, host, q.Encode())
+	curlFlags := "-fsSL"
+	if s.PublicScheme() == "https" {
+		curlFlags = "-fsSLk" // 面板自签常见
+	}
+	return fmt.Sprintf(`curl %s "%s://%s/agent.sh?%s" | sudo bash`, curlFlags, s.PublicScheme(), host, q.Encode())
 }
 
 // handleInstallCommand 实时生成带签名的安装命令（复制前调用，避免签名过期）。
@@ -128,6 +135,7 @@ set -euo pipefail
 MASTER={{printf "%q" .Master}}
 TOKEN={{printf "%q" .Token}}
 BASE={{printf "%q" .Base}}
+MASTER_TLS={{if .MasterTLS}}1{{else}}0{{end}}
 NODE_NAME={{printf "%q" .Name}}
 NODE_GROUP={{printf "%q" .Group}}
 EXPECT_GOOS={{printf "%q" .GOOS}}
@@ -223,14 +231,23 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 log "下载 1pm (${BASE})"
-curl -fsSL "${BASE}/agent.bin?$(sign_query)" -o "$TMP"
+# 面板自签证书时跳过校验（与 Agent wss InsecureSkipVerify 一致）
+CURL_TLS=()
+if [[ "$MASTER_TLS" == "1" ]]; then
+  CURL_TLS=(-k)
+fi
+curl -fsSL "${CURL_TLS[@]}" "${BASE}/agent.bin?$(sign_query)" -o "$TMP"
 chmod 755 "$TMP"
 
 systemctl stop 1pm-agent.service 2>/dev/null || true
 install -m 755 "$TMP" "$BIN_PATH"
 
-log "写入配置 ${MASTER}"
-"$BIN_PATH" agent install "$MASTER" "$TOKEN" --name "$NODE_NAME" --group "$NODE_GROUP" >/dev/null
+log "写入配置 ${MASTER} (tls=${MASTER_TLS})"
+INSTALL_ARGS=("$MASTER" "$TOKEN" --name "$NODE_NAME" --group "$NODE_GROUP")
+if [[ "$MASTER_TLS" == "1" ]]; then
+  INSTALL_ARGS+=(--master-tls)
+fi
+"$BIN_PATH" agent install "${INSTALL_ARGS[@]}" >/dev/null
 
 save_panel_password
 

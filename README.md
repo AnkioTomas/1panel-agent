@@ -91,7 +91,7 @@ Agent ── WebSocket + HMAC ──▶ Master
 - Linux（systemd），`amd64` / `arm64`  
 - 本机已安装并初始化 [1Panel](https://1panel.cn)（需 `1pctl` / `1panel`）  
 - Master 与 Agent **各占一台机器**（禁止同机双角色）  
-- Agent 需能访问 Master 的面板端口（HTTP）  
+- Agent 需能访问 Master 的面板端口（HTTP；若在 1Panel 开启了面板 SSL，则为 HTTPS / wss，证书继承自 `/opt/1panel/secret`）  
 
 ---
 
@@ -118,8 +118,9 @@ curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@v0.0.3/install.sh
 ### 2. 打开管理页
 
 1. 先登录 **本机** 1Panel（安全入口照常）  
-2. 打开：`http://<master>:<面板端口>/__mp/`  
+2. 打开：`http(s)://<master>:<面板端口>/__mp/`  
    或使用侧栏「管理节点…」  
+   （面板开启 SSL 后 Master 自动 HTTPS；HTTP 会 307 跳转。开 SSL 后请用新安装命令装 Agent，或给已有 Agent 设 `master_tls: true` 并重启。）  
 
 ### 3. 安装 Agent
 

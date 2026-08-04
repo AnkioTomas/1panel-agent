@@ -73,8 +73,12 @@ func (c *Client) connectOnce() error {
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
 	sign := config.Sign(c.Cfg.Token, ts)
 
+	scheme := "ws"
+	if c.Cfg.MasterTLS {
+		scheme = "wss"
+	}
 	wsURL := url.URL{
-		Scheme:   "ws",
+		Scheme:   scheme,
 		Host:     c.Cfg.Master,
 		Path:     "/agent/ws",
 		RawQuery: fmt.Sprintf("timestamp=%s&sign=%s", ts, sign),
@@ -83,11 +87,18 @@ func (c *Client) connectOnce() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, wsURL.String(), &websocket.DialOptions{
-		CompressionMode: websocket.CompressionDisabled,
-	})
+	dialOpts := &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled}
+	if c.Cfg.MasterTLS {
+		dialOpts.HTTPClient = &http.Client{
+			Timeout: 15 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 面板自签常见
+			},
+		}
+	}
+	conn, _, err := websocket.Dial(ctx, wsURL.String(), dialOpts)
 	if err != nil {
-		return fmt.Errorf("ws dial: %w", err)
+		return fmt.Errorf("%s dial: %w", scheme, err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
