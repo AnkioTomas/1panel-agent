@@ -3,11 +3,13 @@
 package release
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,7 +69,25 @@ func (c *Config) normalize() {
 		}
 	}
 	if c.HTTPClient == nil {
-		c.HTTPClient = &http.Client{Timeout: 3 * time.Minute}
+		c.HTTPClient = defaultHTTPClient()
+	}
+}
+
+// defaultHTTPClient：头要快失败（烂镜像），body 允许慢链路（大二进制）。
+func defaultHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Minute,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ResponseHeaderTimeout: 20 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+			ForceAttemptHTTP2:     true,
+		},
 	}
 }
 
@@ -296,7 +316,9 @@ func (c *Config) verifyChecksum(tag, file, path string) error {
 }
 
 func (c *Config) httpGetFile(url, dest string) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -320,7 +342,7 @@ func (c *Config) httpGetFile(url, dest string) error {
 		err = cerr
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: write body: %w", url, err)
 	}
 	if n == 0 {
 		return fmt.Errorf("%s: empty body", url)
