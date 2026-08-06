@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"1panel-agent/internal/buildinfo"
 	"1panel-agent/internal/config"
 )
 
@@ -29,30 +30,54 @@ func (s *Server) authorizeAgentDownload(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleAgentScript 在签名校验通过后下发 Agent 安装脚本（/agent.sh）。
+// 脚本只从 Master 取 Token/入口；二进制从 Release/CDN 下载（不走 /agent.bin）。
 func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAgentDownload(w, r) {
 		return
 	}
 	host := s.AdvertiseHost(r)
 	scheme := s.PublicScheme()
+	rel := releaseConfigFromState()
+	version := ""
+	if strings.HasPrefix(buildinfo.Version, "v") {
+		version = buildinfo.Version
+	}
 	data := struct {
-		Base      string
-		Master    string
-		Token     string
-		MasterTLS bool
-		Name      string
-		Group     string
-		GOOS      string
-		GOARCH    string
+		Base       string
+		Master     string
+		Token      string
+		MasterTLS  bool
+		Name       string
+		Group      string
+		Repo       string
+		GitHubAPI  string
+		GitHubDL   string
+		InstallCDN string
+		Version    string
 	}{
-		Base:      scheme + "://" + host,
-		Master:    host,
-		Token:     s.currentToken(),
-		MasterTLS: scheme == "https",
-		Name:      config.SanitizeMeta(r.URL.Query().Get("name")),
-		Group:     config.SanitizeMeta(r.URL.Query().Get("group")),
-		GOOS:      runtime.GOOS,
-		GOARCH:    runtime.GOARCH,
+		Base:       scheme + "://" + host,
+		Master:     host,
+		Token:      s.currentToken(),
+		MasterTLS:  scheme == "https",
+		Name:       config.SanitizeMeta(r.URL.Query().Get("name")),
+		Group:      config.SanitizeMeta(r.URL.Query().Get("group")),
+		Repo:       rel.Repo,
+		GitHubAPI:  rel.GitHubAPI,
+		GitHubDL:   rel.GitHubDL,
+		InstallCDN: rel.InstallCDN,
+		Version:    version,
+	}
+	if data.Repo == "" {
+		data.Repo = "AnkioTomas/1panel-agent"
+	}
+	if data.GitHubAPI == "" {
+		data.GitHubAPI = "https://api.github.com"
+	}
+	if data.GitHubDL == "" {
+		data.GitHubDL = "https://github.com"
+	}
+	if data.InstallCDN == "" {
+		data.InstallCDN = "auto"
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -63,6 +88,7 @@ func (s *Server) handleAgentScript(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAgentBinary 在签名校验通过后下发当前 Master 二进制作为 Agent（/agent.bin）。
+// 保留兼容；新版 agent.sh 默认走 CDN，仅作备用。
 func (s *Server) handleAgentBinary(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAgentDownload(w, r) {
 		return
@@ -126,10 +152,10 @@ func (s *Server) handleInstallCommand(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentInstallTmpl 是 /agent.sh 安装脚本模板。
-// 安装时：签名下载二进制 → agent install 落盘 → 强制设置面板密码 → systemd agent run。
+// Master 只提供鉴权脚本与注册参数；1pm 二进制从 Release/CDN 下载。
 var agentInstallTmpl = template.Must(template.New("agent.sh").Parse(strings.TrimSpace(`
 #!/bin/bash
-# 1pm agent bootstrap — install-time config, runtime is "agent run"
+# 1pm agent bootstrap — binary from Release/CDN; Master only for register config
 set -euo pipefail
 
 MASTER={{printf "%q" .Master}}
@@ -138,13 +164,34 @@ BASE={{printf "%q" .Base}}
 MASTER_TLS={{if .MasterTLS}}1{{else}}0{{end}}
 NODE_NAME={{printf "%q" .Name}}
 NODE_GROUP={{printf "%q" .Group}}
-EXPECT_GOOS={{printf "%q" .GOOS}}
-EXPECT_GOARCH={{printf "%q" .GOARCH}}
+REPO={{printf "%q" .Repo}}
+GITHUB_API={{printf "%q" .GitHubAPI}}
+GITHUB_DL={{printf "%q" .GitHubDL}}
+INSTALL_CDN={{printf "%q" .InstallCDN}}
+VERSION={{printf "%q" .Version}}
 BIN_PATH=/usr/local/bin/1pm
 UNIT_PATH=/etc/systemd/system/1pm-agent.service
 
+MIRROR_PREFIXES=(
+  "https://gh-proxy.com/"
+  "https://ghfast.top/"
+  "https://ghproxy.net/"
+  "https://cdn.gh-proxy.com/"
+  "https://gh.dpik.top/"
+  "https://gh.monlor.com/"
+  "https://gh.noki.icu/"
+  "https://gh.tryxd.cn/"
+  "https://ghpr.cc/"
+  "https://gitproxy.click/"
+)
+
+PREFERRED_MIRROR=""
+RESOLVED_TAG=""
+
 log()  { echo "==> $*" >&2; }
+warn() { echo "warn: $*" >&2; }
 die()  { echo "error: $*" >&2; exit 1; }
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 if [[ "$(id -u)" -ne 0 ]]; then
   die "run as root (use: curl ... | sudo bash)"
@@ -162,22 +209,147 @@ case "$uname_m" in
   *) die "unsupported arch: $uname_m" ;;
 esac
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-if [[ "$OS" != "$EXPECT_GOOS" || "$ARCH" != "$EXPECT_GOARCH" ]]; then
-  echo "warn: master binary is ${EXPECT_GOOS}/${EXPECT_GOARCH}, this host is ${OS}/${ARCH}" >&2
-fi
+[[ "$OS" == "linux" ]] || die "agent install supports linux only (got $OS)"
+ASSET="1pm_linux_${ARCH}"
 
-# 与 Master VerifyToken 相同的 HMAC-SHA256(timestamp=<ts>)
-sign_query() {
-  local ts sign
-  ts="$(date +%s)"
-  sign="$(printf 'timestamp=%s' "$ts" | openssl dgst -sha256 -hmac "$TOKEN" 2>/dev/null | awk '{print $NF}')"
-  [[ -n "$sign" ]] || die "openssl is required to sign download requests"
-  printf 'timestamp=%s&sign=%s' "$ts" "$sign"
+mirror_prefixes() {
+  local mode="$1" m
+  case "$mode" in
+    global) printf '%s\n' "" ;;
+    cn)
+      for m in "${MIRROR_PREFIXES[@]}"; do printf '%s\n' "$m"; done
+      printf '%s\n' ""
+      ;;
+    auto|*)
+      [[ -n "$PREFERRED_MIRROR" ]] && printf '%s\n' "$PREFERRED_MIRROR"
+      for m in "${MIRROR_PREFIXES[@]}"; do printf '%s\n' "$m"; done
+      printf '%s\n' ""
+      ;;
+  esac
+}
+
+http_get() {
+  local url="$1" out="$2" code=0
+  if have_cmd curl; then
+    code="$(curl -L --connect-timeout 15 --max-time 600 --retry 1 --retry-delay 1 \
+      -o "$out" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+    if [[ "$code" =~ ^2[0-9][0-9]$ ]] && [[ -s "$out" ]]; then
+      return 0
+    fi
+    warn "HTTP ${code}: $url"
+    rm -f "$out"
+    return 1
+  fi
+  die "need curl"
+}
+
+pick_mirror_for_tag() {
+  local tag="$1" prefix url tmp
+  PREFERRED_MIRROR=""
+  [[ "$INSTALL_CDN" == "global" ]] && return 0
+  tmp="$(mktemp)"
+  log "探测可用下载节点…"
+  while IFS= read -r prefix; do
+    if [[ -z "$prefix" ]]; then
+      url="${GITHUB_DL}/${REPO}/releases/download/${tag}/checksums.txt"
+    else
+      url="${prefix}${GITHUB_DL}/${REPO}/releases/download/${tag}/checksums.txt"
+    fi
+    if http_get "$url" "$tmp"; then
+      PREFERRED_MIRROR="$prefix"
+      if [[ -z "$prefix" ]]; then
+        log "下载节点: github.com（直连）"
+      else
+        log "下载节点: ${prefix#https://}"
+      fi
+      rm -f "$tmp"
+      return 0
+    fi
+  done < <(mirror_prefixes "$INSTALL_CDN")
+  rm -f "$tmp"
+  warn "未找到可用下载节点，稍后仍会逐个重试"
+}
+
+resolve_version() {
+  RESOLVED_TAG=""
+  local prefix url tmp tag
+  if [[ -n "$VERSION" ]]; then
+    RESOLVED_TAG="$VERSION"
+    return
+  fi
+  tmp="$(mktemp)"
+  while IFS= read -r prefix; do
+    if [[ -z "$prefix" ]]; then
+      url="${GITHUB_API}/repos/${REPO}/releases/latest"
+    else
+      url="${prefix}${GITHUB_API}/repos/${REPO}/releases/latest"
+    fi
+    if http_get "$url" "$tmp"; then
+      tag="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp" | head -n1)"
+      if [[ -n "$tag" ]]; then
+        rm -f "$tmp"
+        log "latest release: $tag"
+        RESOLVED_TAG="$tag"
+        return
+      fi
+    fi
+  done < <(mirror_prefixes "$INSTALL_CDN")
+  rm -f "$tmp"
+  die "cannot resolve latest release"
+}
+
+assert_clean_tag() {
+  local tag="$1"
+  if [[ "$tag" == *$'\n'* || "$tag" == *'==>'* || "$tag" == *' '* ]]; then
+    die "invalid release tag: $tag"
+  fi
+  [[ "$tag" =~ ^v[0-9] ]] || die "invalid release tag: $tag"
+}
+
+download_asset() {
+  local tag="$1" file="$2" out="$3" required="${4:-1}"
+  local prefix url tried="" ok=0 order=()
+  order+=("$PREFERRED_MIRROR")
+  while IFS= read -r prefix; do
+    [[ "$prefix" == "$PREFERRED_MIRROR" ]] && continue
+    order+=("$prefix")
+  done < <(mirror_prefixes "$INSTALL_CDN")
+  for prefix in "${order[@]}"; do
+    if [[ -z "$prefix" ]]; then
+      url="${GITHUB_DL}/${REPO}/releases/download/${tag}/${file}"
+    else
+      url="${prefix}${GITHUB_DL}/${REPO}/releases/download/${tag}/${file}"
+    fi
+    tried="${tried}${tried:+ | }${url}"
+    if http_get "$url" "$out"; then
+      log "已下载 $file"
+      ok=1
+      break
+    fi
+  done
+  if [[ "$ok" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ "$required" == "1" ]]; then
+    die "download failed: $file"$'\n'"tried: $tried"
+  fi
+  return 1
+}
+
+verify_checksum() {
+  local dir="$1" file="$2" sumfile="$3"
+  [[ -f "$sumfile" ]] || { warn "no checksums.txt; skip verify"; return 0; }
+  if have_cmd sha256sum; then
+    local line
+    line="$(grep -E "[[:space:]]${file}$" "$sumfile" || true)"
+    [[ -n "$line" ]] || { warn "checksum entry missing for $file"; return 0; }
+    (cd "$dir" && echo "$line" | sha256sum -c -) || die "checksum mismatch for $file"
+  else
+    warn "no sha256sum; skip verify"
+  fi
 }
 
 # curl|bash 时 stdin 是脚本本身，密码必须从 /dev/tty 读。
-# 非交互：curl ... | sudo PANEL_PASS='...' bash
-# 注意 PANEL_PASS 必须在管道右侧 bash/sudo 上，写在 curl 前无效。
 ask_panel_password() {
   if [[ -n "${PANEL_PASS:-}" ]]; then
     return
@@ -203,7 +375,6 @@ ask_panel_password() {
   done
 }
 
-# 保存前对本机面板做真实登录校验；失败则重问（无 TTY / 环境变量模式直接失败）。
 save_panel_password() {
   local tries=0 from_env=0
   [[ -n "${PANEL_PASS:-}" ]] && from_env=1
@@ -227,20 +398,22 @@ save_panel_password() {
   done
 }
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
 
-log "下载 1pm (${BASE})"
-# 面板自签证书时跳过校验（与 Agent wss InsecureSkipVerify 一致）
-CURL_TLS=()
-if [[ "$MASTER_TLS" == "1" ]]; then
-  CURL_TLS=(-k)
+log "解析 Release（cdn=${INSTALL_CDN}）"
+resolve_version
+assert_clean_tag "$RESOLVED_TAG"
+pick_mirror_for_tag "$RESOLVED_TAG"
+log "下载 ${ASSET} (${RESOLVED_TAG})"
+download_asset "$RESOLVED_TAG" "$ASSET" "$WORKDIR/$ASSET"
+if download_asset "$RESOLVED_TAG" "checksums.txt" "$WORKDIR/checksums.txt" 0; then
+  verify_checksum "$WORKDIR" "$ASSET" "$WORKDIR/checksums.txt"
 fi
-curl -fsSL "${CURL_TLS[@]}" "${BASE}/agent.bin?$(sign_query)" -o "$TMP"
-chmod 755 "$TMP"
+chmod 755 "$WORKDIR/$ASSET"
 
 systemctl stop 1pm-agent.service 2>/dev/null || true
-install -m 755 "$TMP" "$BIN_PATH"
+install -m 755 "$WORKDIR/$ASSET" "$BIN_PATH"
 
 log "写入配置 ${MASTER} (tls=${MASTER_TLS})"
 INSTALL_ARGS=("$MASTER" "$TOKEN" --name "$NODE_NAME" --group "$NODE_GROUP")
@@ -260,6 +433,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HOME=/root
+Environment=GITHUB_API=${GITHUB_API}
+Environment=GITHUB_DL=${GITHUB_DL}
+Environment=INSTALL_CDN=${INSTALL_CDN}
+Environment=REPO=${REPO}
 ExecStart=${BIN_PATH} agent run
 Restart=on-failure
 RestartSec=5
@@ -275,7 +452,7 @@ systemctl restart 1pm-agent.service
 sleep 1
 
 echo
-echo "安装完成  agent → ${MASTER}"
+echo "安装完成  agent → ${MASTER}  (1pm ${RESOLVED_TAG} from CDN)"
 if systemctl is-active --quiet 1pm-agent.service; then
   echo "  服务: active"
 else

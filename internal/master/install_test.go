@@ -58,17 +58,21 @@ func TestAuthorizeAgentDownload(t *testing.T) {
 func TestAgentInstallScript(t *testing.T) {
 	var buf bytes.Buffer
 	err := agentInstallTmpl.Execute(&buf, struct {
-		Base, Master, Token, Name, Group, GOOS, GOARCH string
+		Base, Master, Token, Name, Group               string
+		Repo, GitHubAPI, GitHubDL, InstallCDN, Version string
 		MasterTLS                                      bool
 	}{
-		Base:      "http://10.211.55.14:52045",
-		Master:    "10.211.55.14:52045",
-		Token:     "secret",
-		MasterTLS: true,
-		Name:      "web-1",
-		Group:     "prod",
-		GOOS:      "linux",
-		GOARCH:    "arm64",
+		Base:       "https://10.211.55.14:52045",
+		Master:     "10.211.55.14:52045",
+		Token:      "secret",
+		MasterTLS:  true,
+		Name:       "web-1",
+		Group:      "prod",
+		Repo:       "AnkioTomas/1panel-agent",
+		GitHubAPI:  "https://api.github.com",
+		GitHubDL:   "https://github.com",
+		InstallCDN: "auto",
+		Version:    "v0.1.0",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,14 +80,15 @@ func TestAgentInstallScript(t *testing.T) {
 	out := buf.String()
 	for _, needle := range []string{
 		"#!/bin/bash",
-		"sign_query",
-		"/agent.bin?",
 		"agent install",
 		`--name "$NODE_NAME"`,
 		`--group "$NODE_GROUP"`,
 		"--master-tls",
 		"MASTER_TLS=1",
-		"CURL_TLS",
+		"INSTALL_CDN=",
+		"gh-proxy.com",
+		"1pm_linux_",
+		"releases/download",
 		"ask_panel_password",
 		"save_panel_password",
 		"agent setpwd",
@@ -92,12 +97,18 @@ func TestAgentInstallScript(t *testing.T) {
 		"1pm-master.service",
 		"不能同时作为 agent",
 		"安装完成",
+		"from CDN",
 		`NODE_NAME="web-1"`,
 		`NODE_GROUP="prod"`,
+		`VERSION="v0.1.0"`,
+		"Environment=INSTALL_CDN=",
 	} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("script missing %q", needle)
 		}
+	}
+	if strings.Contains(out, "/agent.bin?") {
+		t.Fatal("agent.sh must download from CDN, not /agent.bin")
 	}
 	if strings.Contains(out, "agent register") {
 		t.Fatal("systemd must not call agent register")
