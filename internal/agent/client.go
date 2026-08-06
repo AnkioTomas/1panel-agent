@@ -239,6 +239,7 @@ func (c *Client) clearSession() {
 }
 
 // handleHTTP 将隧道 HTTP 请求转发到本机 1Panel，并把响应写回流。
+// 静态资源边读边写；HTML/JSON/401 仍整包（会话探测 + Master 注入需要）。
 func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, body io.Reader) {
 	panelURL, err := url.Parse(c.Cfg.PanelURL)
 	if err != nil {
@@ -268,38 +269,57 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		return
 	}
 
-	injected, status, hdrs, raw, err := c.proxyPanelOnce(c.panelClient(), meta, target, panelURL.Host, bodyBytes)
-	if err != nil {
-		c.writeErr(stream, http.StatusBadGateway, err.Error())
-		return
-	}
-	if panelUnauthenticated(status, raw) {
-		c.clearSession()
-		injected, status, hdrs, raw, err = c.proxyPanelOnce(c.panelClient(), meta, target, panelURL.Host, bodyBytes)
+	for attempt := range 2 {
+		injected, resp, err := c.roundTripPanel(meta, target, panelURL.Host, bodyBytes)
 		if err != nil {
 			c.writeErr(stream, http.StatusBadGateway, err.Error())
 			return
 		}
-	}
 
-	respMeta := &protocol.ResponseMeta{
-		Status:  status,
-		Headers: hdrs,
-	}
-	appendSessionSetCookies(respMeta.Headers, injected)
-	if err := protocol.WriteJSON(stream, respMeta); err != nil {
+		status := resp.StatusCode
+		hdrs := protocol.HeaderFromHTTP(resp.Header)
+		ct := resp.Header.Get("Content-Type")
+
+		if protocol.CanStreamHTTP(status, ct) {
+			appendSessionSetCookies(hdrs, injected)
+			respMeta := &protocol.ResponseMeta{Status: status, Headers: hdrs}
+			if err := protocol.WriteJSON(stream, respMeta); err != nil {
+				_ = resp.Body.Close()
+				return
+			}
+			_ = protocol.CopyChunks(stream, resp.Body)
+			_ = resp.Body.Close()
+			return
+		}
+
+		raw, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			c.writeErr(stream, http.StatusBadGateway, err.Error())
+			return
+		}
+
+		if attempt == 0 && panelUnauthenticated(status, protocol.MaybeGunzip(raw, hdrs)) {
+			c.clearSession()
+			continue
+		}
+
+		appendSessionSetCookies(hdrs, injected)
+		respMeta := &protocol.ResponseMeta{Status: status, Headers: hdrs}
+		if err := protocol.WriteJSON(stream, respMeta); err != nil {
+			return
+		}
+		_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
 		return
 	}
-	_ = protocol.CopyChunks(stream, bytes.NewReader(raw))
 }
 
-func (c *Client) proxyPanelOnce(client *http.Client, meta *protocol.RequestMeta, target *url.URL, host string, body []byte) ([]*http.Cookie, int, map[string][]string, []byte, error) {
+func (c *Client) roundTripPanel(meta *protocol.RequestMeta, target *url.URL, host string, body []byte) ([]*http.Cookie, *http.Response, error) {
 	req, err := http.NewRequest(meta.Method, target.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, nil, nil, err
+		return nil, nil, err
 	}
 	protocol.ApplyHeader(req.Header, meta.Headers)
-	req.Header.Del("Accept-Encoding")
 	req.Host = host
 	panel.ApplyEntrance(req.Header, c.Cfg.PanelEntrance)
 
@@ -307,16 +327,11 @@ func (c *Client) proxyPanelOnce(client *http.Client, meta *protocol.RequestMeta,
 	applyAgentSession(req, injected)
 	panel.AlignCSRF(req.Header)
 
-	resp, err := client.Do(req)
+	resp, err := c.panelClient().Do(req)
 	if err != nil {
-		return injected, 0, nil, nil, err
+		return injected, nil, err
 	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return injected, 0, nil, nil, err
-	}
-	return injected, resp.StatusCode, protocol.HeaderFromHTTP(resp.Header), raw, nil
+	return injected, resp, nil
 }
 
 // handleWS 将隧道 WebSocket 升级请求转发到本机 1Panel 并双向拷贝帧。

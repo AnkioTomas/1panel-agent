@@ -249,6 +249,7 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 }
 
 // proxyHTTP 经 smux 流代理 HTTP，必要时解压并注入侧边栏 Hook。
+// 静态资源边收边转；HTML/JSON 仍整包处理。
 // 返回 false 表示隧道已死，调用方应清 mp_node 并回主节点。
 func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session, targetPath string) bool {
 	stream, err := sess.Mux.OpenStream()
@@ -261,8 +262,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 
 	headers := protocol.HeaderFromHTTP(r.Header)
 	delete(headers, "Host")
-	// http.Header keys are canonical; force identity encoding for HTML injection.
-	delete(headers, "Accept-Encoding")
+	// 只谈 gzip：HTML 注入可解压；JS/CSS 压缩体原样回浏览器。
+	headers["Accept-Encoding"] = []string{"gzip"}
 	// 面板会话由 Agent 自持；控制 Cookie / 本机 psession 不进隧道。
 	applyRemoteRequestCookies(headers, r)
 	meta := &protocol.RequestMeta{
@@ -292,31 +293,45 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 		return true
 	}
 
-	respBody, err := io.ReadAll(protocol.NewChunkReader(stream))
-	if err != nil {
-		http.Error(w, "tunnel read body: "+err.Error(), http.StatusBadGateway)
-		return true
-	}
-	ct := ""
-	for k, vals := range respMeta.Headers {
-		if http.CanonicalHeaderKey(k) == "Content-Type" && len(vals) > 0 {
-			ct = vals[0]
-			break
-		}
-	}
-	respBody = maybeGunzip(respBody, respMeta.Headers)
-	dropHopHeaders(respMeta.Headers)
-
 	// 子节点把浏览器踢去登录页时，改走主节点登录。
 	if locationIsLoginRedirect(respMeta.Headers) {
+		_, _ = io.Copy(io.Discard, protocol.NewChunkReader(stream))
 		s.redirectToMasterLogin(w, r, "")
 		return true
 	}
 
+	ct := protocol.HeaderGet(respMeta.Headers, "Content-Type")
+	normalizeRemoteSetCookies(respMeta.Headers)
+	chunked := protocol.NewChunkReader(stream)
+
+	// 静态资源：拿到 ResponseMeta 立刻回浏览器，边收边转。
+	if protocol.CanStreamHTTP(respMeta.Status, ct) {
+		h := w.Header()
+		for k, vals := range respMeta.Headers {
+			ck := http.CanonicalHeaderKey(k)
+			if ck == "Transfer-Encoding" {
+				continue
+			}
+			for _, v := range vals {
+				h.Add(k, v)
+			}
+		}
+		w.WriteHeader(respMeta.Status)
+		_, _ = io.Copy(flushWriter{w: w}, chunked)
+		return true
+	}
+
+	respBody, err := io.ReadAll(chunked)
+	if err != nil {
+		http.Error(w, "tunnel read body: "+err.Error(), http.StatusBadGateway)
+		return true
+	}
+	respBody = protocol.MaybeGunzip(respBody, respMeta.Headers)
+	dropHopHeaders(respMeta.Headers)
+
 	if respMeta.Status == http.StatusOK && strings.Contains(strings.ToLower(ct), "text/html") {
 		respBody = s.injectHookHTML(respBody, s.displayHost(r))
 	}
-	normalizeRemoteSetCookies(respMeta.Headers)
 
 	h := w.Header()
 	for k, vals := range respMeta.Headers {
@@ -332,6 +347,21 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 	w.WriteHeader(respMeta.Status)
 	_, _ = w.Write(respBody)
 	return true
+}
+
+// flushWriter 每写一块就 Flush，避免静态资源卡在缓冲里拖高 TTFB。
+type flushWriter struct {
+	w http.ResponseWriter
+}
+
+func (f flushWriter) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	if n > 0 {
+		if fl, ok := f.w.(http.Flusher); ok {
+			fl.Flush()
+		}
+	}
+	return n, err
 }
 
 // proxyWebSocket 经 smux 流完成浏览器与远端 1Panel 的 WebSocket 双向转发。

@@ -383,31 +383,7 @@ func dropHopHeaders(h map[string][]string) {
 	}
 }
 
-// maybeGunzip 在 Content-Encoding 为 gzip 时解压 body，否则原样返回。
-func maybeGunzip(body []byte, headers map[string][]string) []byte {
-	ce := ""
-	for k, vals := range headers {
-		if strings.EqualFold(k, "Content-Encoding") && len(vals) > 0 {
-			ce = vals[0]
-			break
-		}
-	}
-	if !strings.EqualFold(ce, "gzip") {
-		return body
-	}
-	gr, err := gzip.NewReader(bytes.NewReader(body))
-	if err != nil {
-		return body
-	}
-	defer gr.Close()
-	out, err := io.ReadAll(gr)
-	if err != nil {
-		return body
-	}
-	return out
-}
-
-// wrapLocalProxy 配置本机反代：禁用压缩并在 HTML 响应中注入 Hook。
+// wrapLocalProxy 配置本机反代：强制 gzip（便于 HTML 注入解压），静态资源原样透传压缩。
 func (s *Server) wrapLocalProxy() {
 	if s.localProxy == nil {
 		return
@@ -416,7 +392,8 @@ func (s *Server) wrapLocalProxy() {
 	s.localProxy.Director = func(r *http.Request) {
 		*r = *r.WithContext(context.WithValue(r.Context(), clientHostKey{}, r.Host))
 		upstream(r)
-		r.Header.Del("Accept-Encoding")
+		// 只谈 gzip：HTML 注入能解压；JS/CSS 压缩体直接给浏览器。
+		r.Header.Set("Accept-Encoding", "gzip")
 	}
 	s.localProxy.ModifyResponse = func(resp *http.Response) error {
 		ct := resp.Header.Get("Content-Type")
