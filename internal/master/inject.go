@@ -242,12 +242,24 @@ function renderPop(btn, agents){
   setTimeout(function(){ document.addEventListener("click", onDocClick, true); }, 0);
 }
 
-function loadAgents(cb){
-  fetch("/__mp/api/agents",{credentials:"include"}).then(function(r){
+// 页面生命周期内只拉一次 agents；打开面板复用缓存，绝不二次请求。
+var cachedAgents=null;
+var agentsPromise=null;
+
+function ensureAgents(){
+  if(cachedAgents) return Promise.resolve(cachedAgents);
+  if(agentsPromise) return agentsPromise;
+  agentsPromise=fetch("/__mp/api/agents",{credentials:"include"}).then(function(r){
     if(!r.ok) throw new Error("agents "+r.status);
     return r.json();
-  }).then(function(list){ cb(Array.isArray(list)?list:[]); })
-  .catch(function(){ cb([]); });
+  }).then(function(list){
+    cachedAgents=Array.isArray(list)?list:[];
+    return cachedAgents;
+  }).catch(function(){
+    cachedAgents=[];
+    return cachedAgents;
+  });
+  return agentsPromise;
 }
 
 function bindSwitch(btn){
@@ -261,15 +273,15 @@ function bindSwitch(btn){
       else { ip.textContent=""; ip.style.display="none"; }
     }
   }
-  refreshLabel([]);
-  loadAgents(refreshLabel);
   if(btn.getAttribute("data-mp-bound")==="1") return;
   btn.setAttribute("data-mp-bound","1");
+  refreshLabel([]);
+  ensureAgents().then(refreshLabel);
   btn.addEventListener("click", function(e){
     e.preventDefault();
     e.stopPropagation();
     if(document.getElementById("mp-node-pop")){ closePop(); return; }
-    loadAgents(function(agents){
+    ensureAgents().then(function(agents){
       refreshLabel(agents);
       renderPop(btn, agents);
     });
