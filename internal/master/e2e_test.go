@@ -1,6 +1,8 @@
 package master_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +26,20 @@ func TestTunnelProxy(t *testing.T) {
 		if r.URL.Path == "/api/v2/dashboard/base/os" {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"code":200}`)
+			return
+		}
+		if r.URL.Path == "/assets/js/big.js" {
+			if r.Header.Get("Accept-Encoding") != "gzip" {
+				t.Errorf("asset Accept-Encoding=%q want gzip", r.Header.Get("Accept-Encoding"))
+			}
+			var buf bytes.Buffer
+			zw := gzip.NewWriter(&buf)
+			_, _ = zw.Write(bytes.Repeat([]byte("X"), 200000))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/javascript")
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			_, _ = w.Write(buf.Bytes())
 			return
 		}
 		if r.URL.Path != "/hello" {
@@ -139,5 +155,36 @@ echo 'User: testuser'
 	sc := resp.Header.Get("Set-Cookie")
 	if !strings.Contains(sc, "psession=") {
 		t.Fatalf("panel cookie missing: %q", sc)
+	}
+
+	// 静态资源必须透传 gzip，且不能被整包卡死。
+	assetReq, err := http.NewRequest(http.MethodGet, "http://"+masterAddr+"/assets/js/big.js", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetReq.AddCookie(&http.Cookie{Name: "mp_node", Value: "agent01"})
+	assetReq.Header.Set("Accept-Encoding", "gzip")
+	assetResp, err := http.DefaultClient.Do(assetReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer assetResp.Body.Close()
+	if assetResp.StatusCode != 200 {
+		t.Fatalf("asset status=%d", assetResp.StatusCode)
+	}
+	if assetResp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("asset Content-Encoding=%q want gzip", assetResp.Header.Get("Content-Encoding"))
+	}
+	gr, err := gzip.NewReader(assetResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gr.Close()
+	assetBody, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assetBody) != 200000 {
+		t.Fatalf("asset len=%d", len(assetBody))
 	}
 }
