@@ -41,10 +41,10 @@ systemd：`ExecStart=/usr/local/bin/1pm master`
 
 无额外参数。按本机已安装角色更新二进制并重启服务：
 
-| 角色   | 来源                                                                       | 重启单元             |
-|--------|----------------------------------------------------------------------------|----------------------|
-| Master | GitHub Release（沿用 `master.json` 里安装时的 `GITHUB_*` / `INSTALL_CDN`） | `1pm-master.service` |
-| Agent  | 已配置 Master 的 `/agent.bin`                                              | `1pm-agent.service`  |
+| 角色   | 来源                                                                             | 重启单元             |
+|--------|----------------------------------------------------------------------------------|----------------------|
+| Master | GitHub Release（沿用 `master.json` 里安装时的 `GITHUB_*` / `INSTALL_CDN`）       | `1pm-master.service` |
+| Agent  | GitHub Release（含 CDN/镜像，与 Master 同源；可用 `VERSION` / `INSTALL_CDN` 等） | `1pm-agent.service`  |
 
 Master 已是最新 tag 时跳过下载与重启。可用环境变量 `VERSION=vX.Y.Z` 固定 Master 目标版本。
 
@@ -53,7 +53,8 @@ Master 已是最新 tag 时跳过下载与重启。可用环境变量 `VERSION=v
 VERSION=v0.1.0 1pm update   # 仅 Master：钉死 Release tag
 ```
 
-建议顺序：先在主节点 `1pm update`，再在管理页「更新子节点 1pm」，或各子节点自行 `1pm update`。
+建议：主节点与子节点均可直接 `1pm update`。管理页「更新子节点」只发隧道信号，等价于各子节点执行 `1pm update`（各自从 CDN
+拉包，不再经主节点推二进制）。
 
 ---
 

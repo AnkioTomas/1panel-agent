@@ -54,7 +54,7 @@ Takeover 与 Agent 代理会争同一面板端口与职责。安装脚本与 `ro
 ## 10. 1pm / 1Panel 更新分工
 
 - **不**再包一层「检查 1Panel 更新」展示；列表只报当前版本。  
-- 1pm：主节点 `update-master`（Release），子节点 `force-update`（吃主节点 `/agent.bin`）。  
+- 1pm：主节点 `update-master`（Release），子节点 `force-update`（隧道信号 → Agent 自行 `1pm update` / Release/CDN）。
 - 1Panel：`upgrade-panel` 让 Agent **登录后**调官方 `/api/v2/core/settings/upgrade`（与面板 UI 同源）。
 
 ## 11. 继承面板 SSL（不读 core.db）

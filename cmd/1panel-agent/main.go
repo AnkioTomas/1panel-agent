@@ -85,7 +85,7 @@ func runAgent(args []string) error {
 }
 
 // runUpdate 按本机角色自更新 1pm 二进制并重启对应服务。
-// Master：从 Release 拉最新；Agent：从已配置 Master 拉 /agent.bin。
+// Master / Agent 均从 GitHub Release（含 CDN/镜像）拉取。
 func runUpdate(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("update does not take arguments")
@@ -107,10 +107,15 @@ func runUpdate(args []string) error {
 		fmt.Printf("master updated %s -> %s, restarting 1pm-master.service…\n", res.OldVersion, res.Tag)
 		return nil
 	case hasAgent:
-		if err := agent.UpdateSelf(true); err != nil {
+		res, err := agent.UpdateSelf(true)
+		if err != nil {
 			return err
 		}
-		fmt.Printf("agent updated from master (was %s), restarting 1pm-agent.service…\n", buildinfo.Version)
+		if res.Skipped {
+			fmt.Printf("agent already up to date (%s)\n", res.Tag)
+			return nil
+		}
+		fmt.Printf("agent updated %s -> %s (Release/CDN), restarting 1pm-agent.service…\n", res.OldVersion, res.Tag)
 		return nil
 	default:
 		return fmt.Errorf("未检测到 1pm master 或 agent，无法更新")
@@ -248,7 +253,7 @@ func usage() {
 
 Usage:
   1pm master                          start master
-  1pm update                          update local 1pm (master←Release / agent←Master) and restart
+  1pm update                          update local 1pm from Release/CDN and restart
   1pm uninstall                       auto-detect and uninstall master and/or agent
 
   1pm agent install <host:port> <token> [--name NAME] [--group GROUP]

@@ -92,11 +92,11 @@ Master 检测到面板 `server.crt`/`server.key` 可加载时（路径 `{1pctl B
 }
 ```
 
-建议顺序：先更新主节点，再强制更新子节点（子节点吃的是主节点磁盘上的 `/agent.bin`）。
+建议：主节点与子节点均可独立从 Release 更新；「更新子节点」不再依赖主节点磁盘上的 `/agent.bin`。
 
 ### POST /__mp/api/force-update
 
-通知所有在线 Agent 从本 Master 拉取 `/agent.bin`（同安装脚本），替换二进制并 `systemctl restart 1pm-agent`。
+通知所有在线 Agent 自行从 GitHub Release/CDN 更新（等同各节点 `1pm update`）。隧道只传空信号，不推送二进制。
 
 ```json
 {

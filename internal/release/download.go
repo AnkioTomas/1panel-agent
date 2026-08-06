@@ -81,7 +81,7 @@ func envOr(key, def string) string {
 // BinaryName 返回当前 GOOS/GOARCH 对应的 Release 资源名。
 func BinaryName() (string, error) {
 	if runtime.GOOS != "linux" {
-		return "", fmt.Errorf("master self-update supports linux only (got %s)", runtime.GOOS)
+		return "", fmt.Errorf("self-update supports linux only (got %s)", runtime.GOOS)
 	}
 	arch := runtime.GOARCH
 	switch arch {

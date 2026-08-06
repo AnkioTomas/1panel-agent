@@ -6,8 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -33,9 +31,9 @@ type forceUpdateStatus struct {
 	DoneAt  time.Time      `json:"done_at,omitempty"`
 }
 
-// handleForceUpdate 异步经隧道推送本机二进制。
-// POST：立刻返回 accepted，后台推送（避免浏览器/反代把长传当成超时）。
-// GET：查询最近一次任务状态。
+// handleForceUpdate 异步通知在线 Agent 自行 `1pm update`（Release/CDN）。
+// POST：立刻返回 accepted；GET：查询最近一次任务状态。
+// 不再经隧道推送二进制——慢且占带宽。
 func (s *Server) handleForceUpdate(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -95,7 +93,7 @@ func (s *Server) handleForceUpdate(w http.ResponseWriter, r *http.Request) {
 		"master_version": buildinfo.Version,
 		"total":          len(jobs) + len(offline),
 		"dispatched":     len(jobs),
-		"message":        "update dispatched; poll GET /__mp/api/force-update",
+		"message":        "update signal sent; agents download from Release/CDN (poll GET /__mp/api/force-update)",
 	})
 }
 
@@ -135,24 +133,12 @@ func (s *Server) runForceUpdate(jobs []struct {
 		s.updateMu.Unlock()
 	}()
 
-	f, size, err := openSelfBinary()
-	if err != nil {
-		s.updateMu.Lock()
-		s.updateStatus.Error = "open binary: " + err.Error()
-		s.updateStatus.Running = false
-		s.updateStatus.DoneAt = time.Now()
-		s.updateMu.Unlock()
-		log.Printf("force-update: %v", err)
-		return
-	}
-	_ = f.Close()
-
 	var wg sync.WaitGroup
 	for _, job := range jobs {
 		wg.Add(1)
 		go func(info AgentInfo, sess *Session) {
 			defer wg.Done()
-			err := pushAgentUpdate(sess, size, openSelfBinaryReader)
+			err := signalAgentUpdate(sess)
 			res := updateResult{ID: info.ID, Name: info.DisplayName(), OK: err == nil}
 			if err != nil {
 				res.Error = err.Error()
@@ -168,41 +154,13 @@ func (s *Server) runForceUpdate(jobs []struct {
 	wg.Wait()
 }
 
-func openSelfBinary() (*os.File, int64, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return nil, 0, err
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-	f, err := os.Open(exe)
-	if err != nil {
-		return nil, 0, err
-	}
-	st, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return nil, 0, err
-	}
-	return f, st.Size(), nil
-}
-
-func openSelfBinaryReader() (io.ReadCloser, error) {
-	f, _, err := openSelfBinary()
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
-func pushAgentUpdate(sess *Session, size int64, open func() (io.ReadCloser, error)) error {
+// signalAgentUpdate 只发 StreamTypeUpdate 空 body，让 Agent 自行 Release/CDN 更新。
+func signalAgentUpdate(sess *Session) error {
 	stream, err := sess.Mux.OpenStream()
 	if err != nil {
 		return fmt.Errorf("open stream: %w", err)
 	}
 	defer stream.Close()
-	// 大二进制 + 慢链路：读写共用绝对 deadline，期间靠 smux keepalive 保活会话。
 	_ = stream.SetDeadline(time.Now().Add(10 * time.Minute))
 
 	meta := &protocol.RequestMeta{
@@ -210,21 +168,14 @@ func pushAgentUpdate(sess *Session, size int64, open func() (io.ReadCloser, erro
 		Method: http.MethodPost,
 		Path:   "/update",
 		Headers: map[string][]string{
-			"Content-Type":   {"application/octet-stream"},
-			"Content-Length": {fmt.Sprintf("%d", size)},
+			"Content-Type": {"application/json"},
 		},
 	}
 	if err := protocol.WriteRequestMeta(stream, meta); err != nil {
 		return err
 	}
-
-	r, err := open()
-	if err != nil {
-		return fmt.Errorf("open binary: %w", err)
-	}
-	defer r.Close()
-	if err := protocol.CopyChunks(stream, r); err != nil {
-		return fmt.Errorf("send binary: %w", err)
+	if err := protocol.CopyChunks(stream, http.NoBody); err != nil {
+		return fmt.Errorf("send signal: %w", err)
 	}
 
 	respMeta := &protocol.ResponseMeta{}

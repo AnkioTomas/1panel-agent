@@ -20,7 +20,7 @@ const (
 	StreamTypeWS byte = 2
 	// StreamTypeStats 表示 Master 拉取 Agent 主机状态（CPU/内存/版本）。
 	StreamTypeStats byte = 3
-	// StreamTypeUpdate 表示 Master 经隧道推送二进制，强制 Agent 更新并重启。
+	// StreamTypeUpdate 表示 Master 通知 Agent 自行从 Release/CDN 更新（空 body 信号）。
 	StreamTypeUpdate byte = 4
 	// StreamTypePanelUpgrade 表示 Master 通知 Agent 用本机会话触发 1Panel 官方升级 API。
 	StreamTypePanelUpgrade byte = 5

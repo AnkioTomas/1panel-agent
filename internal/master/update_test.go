@@ -16,15 +16,14 @@ import (
 	"github.com/xtaci/smux"
 )
 
-func TestPushAgentUpdateSendsBinaryOverTunnel(t *testing.T) {
+func TestSignalAgentUpdateEmptyBody(t *testing.T) {
 	c1, c2 := net.Pipe()
 	t.Cleanup(func() {
 		_ = c1.Close()
 		_ = c2.Close()
 	})
 
-	payload := bytes.Repeat([]byte("1pm-bin-"), 4096) // ~32KiB
-	var got bytes.Buffer
+	var gotLen int64
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -49,8 +48,8 @@ func TestPushAgentUpdateSendsBinaryOverTunnel(t *testing.T) {
 		if meta.Type != protocol.StreamTypeUpdate {
 			t.Errorf("type=%d", meta.Type)
 		}
-		body := protocol.NewChunkReader(stream)
-		if _, err := io.Copy(&got, body); err != nil {
+		gotLen, err = io.Copy(io.Discard, protocol.NewChunkReader(stream))
+		if err != nil {
 			t.Errorf("copy: %v", err)
 			return
 		}
@@ -64,19 +63,16 @@ func TestPushAgentUpdateSendsBinaryOverTunnel(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mux.Close() })
 
-	err = pushAgentUpdate(&Session{Mux: mux}, int64(len(payload)), func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(payload)), nil
-	})
-	if err != nil {
-		t.Fatalf("push: %v", err)
+	if err := signalAgentUpdate(&Session{Mux: mux}); err != nil {
+		t.Fatalf("signal: %v", err)
 	}
 	wg.Wait()
-	if !bytes.Equal(got.Bytes(), payload) {
-		t.Fatalf("payload mismatch: got %d want %d", got.Len(), len(payload))
+	if gotLen != 0 {
+		t.Fatalf("expected empty body, got %d bytes", gotLen)
 	}
 }
 
-func TestPushAgentUpdateAgentError(t *testing.T) {
+func TestSignalAgentUpdateAgentError(t *testing.T) {
 	c1, c2 := net.Pipe()
 	t.Cleanup(func() {
 		_ = c1.Close()
@@ -105,9 +101,7 @@ func TestPushAgentUpdateAgentError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mux.Close() })
 
-	err = pushAgentUpdate(&Session{Mux: mux}, 4, func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader([]byte("abcd"))), nil
-	})
+	err = signalAgentUpdate(&Session{Mux: mux})
 	if err == nil || err.Error() != "boom" {
 		t.Fatalf("err=%v", err)
 	}
