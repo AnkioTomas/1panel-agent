@@ -43,9 +43,33 @@ func TestCanStreamHTTP(t *testing.T) {
 	}
 }
 
+func TestIsCacheableAsset(t *testing.T) {
+	if !IsCacheableAsset("application/javascript") || !IsCacheableAsset("text/css") {
+		t.Fatal("js/css should be assets")
+	}
+	if IsCacheableAsset("text/html") || IsCacheableAsset("") || IsCacheableAsset("text/plain") {
+		t.Fatal("non-assets misclassified")
+	}
+}
+
 func TestHeaderGet(t *testing.T) {
 	h := map[string][]string{"content-type": {"text/css"}}
 	if HeaderGet(h, "Content-Type") != "text/css" {
 		t.Fatal(HeaderGet(h, "Content-Type"))
+	}
+}
+
+func TestDeleteHeader(t *testing.T) {
+	h := map[string][]string{
+		"Set-Cookie":    {"a=1"},
+		"set-cookie":    {"b=2"},
+		"Cache-Control": {"max-age=1"},
+	}
+	DeleteHeader(h, "Set-Cookie")
+	if HeaderGet(h, "Set-Cookie") != "" || len(h["set-cookie"]) > 0 {
+		t.Fatalf("Set-Cookie not deleted: %#v", h)
+	}
+	if HeaderGet(h, "Cache-Control") != "max-age=1" {
+		t.Fatal("Cache-Control lost")
 	}
 }

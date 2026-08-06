@@ -39,6 +39,8 @@ func TestTunnelProxy(t *testing.T) {
 			w.Header().Set("Content-Type", "application/javascript")
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			// 模拟会话 Cookie 误挂到静态资源：代理必须剥掉，否则浏览器不进 disk cache。
+			w.Header().Set("Set-Cookie", "psession=should-not-leak; Path=/")
 			_, _ = w.Write(buf.Bytes())
 			return
 		}
@@ -174,6 +176,12 @@ echo 'User: testuser'
 	}
 	if assetResp.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("asset Content-Encoding=%q want gzip", assetResp.Header.Get("Content-Encoding"))
+	}
+	if assetResp.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset Cache-Control=%q", assetResp.Header.Get("Cache-Control"))
+	}
+	if sc := assetResp.Header.Values("Set-Cookie"); len(sc) > 0 {
+		t.Fatalf("asset must not Set-Cookie (breaks disk cache): %v", sc)
 	}
 	gr, err := gzip.NewReader(assetResp.Body)
 	if err != nil {

@@ -306,6 +306,10 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 
 	// 静态资源：拿到 ResponseMeta 立刻回浏览器，边收边转。
 	if protocol.CanStreamHTTP(respMeta.Status, ct) {
+		if protocol.IsCacheableAsset(ct) {
+			// 双保险：静态资源不允许 Set-Cookie 毒缓存。
+			protocol.DeleteHeader(respMeta.Headers, "Set-Cookie")
+		}
 		h := w.Header()
 		for k, vals := range respMeta.Headers {
 			ck := http.CanonicalHeaderKey(k)

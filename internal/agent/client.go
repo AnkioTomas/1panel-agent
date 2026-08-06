@@ -281,7 +281,13 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		ct := resp.Header.Get("Content-Type")
 
 		if protocol.CanStreamHTTP(status, ct) {
-			appendSessionSetCookies(hdrs, injected)
+			if protocol.IsCacheableAsset(ct) {
+				// 静态资源绝不能带 Set-Cookie：浏览器会拒写/跳过 disk cache，
+				// 即使上游已有 Cache-Control: immutable。会话 Cookie 只在 HTML/API 回写。
+				protocol.DeleteHeader(hdrs, "Set-Cookie")
+			} else {
+				appendSessionSetCookies(hdrs, injected)
+			}
 			respMeta := &protocol.ResponseMeta{Status: status, Headers: hdrs}
 			if err := protocol.WriteJSON(stream, respMeta); err != nil {
 				_ = resp.Body.Close()
