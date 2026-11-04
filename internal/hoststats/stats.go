@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,8 +20,28 @@ type Stats struct {
 	GOARCH     string
 }
 
-// Collect 采集本机 CPU/内存。CPU 用两次 /proc/stat 差值估算。
+var cache struct {
+	sync.Mutex
+	st Stats
+	at time.Time
+}
+
+const cacheTTL = 5 * time.Second
+
+// Collect 采集本机 CPU/内存。结果缓存 5s 并串行化，避免页面加载时反复 300ms 采样。
 func Collect() Stats {
+	cache.Lock()
+	defer cache.Unlock()
+	if !cache.at.IsZero() && time.Since(cache.at) < cacheTTL {
+		return cache.st
+	}
+	cache.st = collect()
+	cache.at = time.Now()
+	return cache.st
+}
+
+// collect 实际采集：CPU 用两次 /proc/stat 差值估算。
+func collect() Stats {
 	st := Stats{
 		GOOS:   runtime.GOOS,
 		GOARCH: runtime.GOARCH,
@@ -78,7 +99,7 @@ func readCPUTimes() (idle, total uint64, ok bool) {
 		return 0, 0, false
 	}
 	var sum uint64
-	for i := 1; i < len(fields); i++ {
+	for i := 1; i < len(fields) && i <= 8; i++ { // guest/guest_nice 已计入 user/nice，不重复累加
 		n, err := strconv.ParseUint(fields[i], 10, 64)
 		if err != nil {
 			return 0, 0, false

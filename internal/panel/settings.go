@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Settings 封装本地 1Panel 系统的基础配置信息。
@@ -68,14 +70,27 @@ func parseUserInfo(out []byte) (*Settings, error) {
 	return st, nil
 }
 
-// ReadSystemVersion 通过 1panel version 读取本地 1Panel 版本号。
+var versionCache struct {
+	sync.Mutex
+	val string
+	at  time.Time
+}
+
+// ReadSystemVersion 通过 1panel version 读取本地 1Panel 版本号（成功结果缓存 30s，避免频繁 fork）。
 func ReadSystemVersion() string {
+	versionCache.Lock()
+	defer versionCache.Unlock()
+	if versionCache.val != "" && time.Since(versionCache.at) < 30*time.Second {
+		return versionCache.val
+	}
 	out, err := runPanel("version")
 	if err != nil {
 		return ""
 	}
 	if m := versionLineRe.FindSubmatch(stripANSIBytes(out)); len(m) == 2 {
-		return string(m[1])
+		versionCache.val = string(m[1])
+		versionCache.at = time.Now()
+		return versionCache.val
 	}
 	return ""
 }

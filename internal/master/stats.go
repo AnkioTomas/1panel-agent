@@ -15,6 +15,9 @@ func (s *Server) refreshAgentStats() {
 	list := s.reg.List()
 	var wg sync.WaitGroup
 	for _, a := range list {
+		if time.Now().Unix()-a.StatsAt < 5 {
+			continue
+		}
 		sess, ok := s.reg.Get(a.ID)
 		if !ok {
 			continue
