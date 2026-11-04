@@ -63,6 +63,9 @@ func LoginWithClient(client *http.Client, panelBase, entrance, username, passwor
 			return nil, err
 		}
 		res, err := loginOnce(c, base, entrance, username, password, publicKeyPEM)
+		if loopback {
+			c.CloseIdleConnections() // 每次尝试都是独立 Transport，用完即释放
+		}
 		if err == nil {
 			return res, nil
 		}

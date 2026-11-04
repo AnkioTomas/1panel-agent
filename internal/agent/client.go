@@ -36,10 +36,12 @@ type Client struct {
 	sessMu      sync.Mutex
 	sessCookies []*http.Cookie
 	sessUntil   time.Time
+	loginFailAt time.Time
 
 	muxMu sync.Mutex
 	mux   *smux.Session
 
+	panelOnce sync.Once
 	panelHTTP *http.Client
 }
 
@@ -54,7 +56,11 @@ func Run(cfg *config.Agent) error {
 	}
 	backoff := time.Second
 	for {
+		started := time.Now()
 		err := c.connectOnce()
+		if time.Since(started) > time.Minute {
+			backoff = time.Second
+		}
 		if err != nil {
 			log.Printf("agent disconnected: %v; retry in %s", err, backoff)
 		} else {
@@ -218,11 +224,15 @@ func (c *Client) getSessionCookies() []*http.Cookie {
 		return c.sessCookies
 	}
 
+	if time.Since(c.loginFailAt) < 5*time.Second {
+		return nil
+	}
 	res, err := panel.Login(c.Cfg.PanelURL, c.Cfg.PanelEntrance, c.Cfg.PanelUser, pass)
 	if err != nil {
 		log.Printf("agent auto-login failed: %v", err)
 		c.sessCookies = nil
 		c.sessUntil = time.Time{}
+		c.loginFailAt = time.Now()
 		return nil
 	}
 	c.sessCookies = res.Cookies
@@ -280,7 +290,16 @@ func (c *Client) handleHTTP(stream *smux.Stream, meta *protocol.RequestMeta, bod
 		hdrs := protocol.HeaderFromHTTP(resp.Header)
 		ct := resp.Header.Get("Content-Type")
 
-		if protocol.CanStreamHTTP(status, ct) {
+		loginRedirect := panelLoginRedirect(status, resp.Header, c.Cfg.PanelEntrance)
+		if attempt == 0 && loginRedirect && c.Cfg.PanelUser != "" {
+			// 远端会话过期被踢去登录页：丢弃缓存、重新自动登录后重试，不让 Master 回退主节点。
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+			c.clearSession()
+			continue
+		}
+
+		if !loginRedirect && protocol.CanStreamHTTP(status, ct) {
 			if protocol.IsCacheableAsset(ct) {
 				// 静态资源绝不能带 Set-Cookie：浏览器会拒写/跳过 disk cache，
 				// 即使上游已有 Cache-Control: immutable。会话 Cookie 只在 HTML/API 回写。
@@ -367,7 +386,7 @@ func (c *Client) handleWS(stream *smux.Stream, meta *protocol.RequestMeta, body 
 
 	var conn net.Conn
 	if useTLS {
-		conn, err = tls.Dial(network, dialAddr, &tls.Config{InsecureSkipVerify: true, ServerName: panelURL.Hostname()})
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, network, dialAddr, &tls.Config{InsecureSkipVerify: true, ServerName: panelURL.Hostname()})
 	} else {
 		conn, err = net.DialTimeout(network, dialAddr, 10*time.Second)
 	}
@@ -465,10 +484,12 @@ func (c *Client) writeJSON(stream *smux.Stream, v any) {
 }
 
 func (c *Client) panelClient() *http.Client {
-	if c.panelHTTP != nil {
-		return c.panelHTTP
-	}
-	c.panelHTTP = &http.Client{
+	c.panelOnce.Do(func() { c.panelHTTP = newPanelHTTPClient() })
+	return c.panelHTTP
+}
+
+func newPanelHTTPClient() *http.Client {
+	return &http.Client{
 		Timeout: 0,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -480,7 +501,6 @@ func (c *Client) panelClient() *http.Client {
 			MaxIdleConnsPerHost: 8,
 		},
 	}
-	return c.panelHTTP
 }
 
 // applyAgentSession 去掉请求里的面板会话 Cookie，再注入 Agent 自持会话。
@@ -509,6 +529,26 @@ func nonPanelCookieHeader(header string) string {
 		parts = append(parts, part)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// panelLoginRedirect 判断响应是否为跳往登录页/安全入口的重定向（会话失效的典型表现）。
+func panelLoginRedirect(status int, h http.Header, entrance string) bool {
+	if status < 300 || status >= 400 {
+		return false
+	}
+	loc := h.Get("Location")
+	if loc == "" {
+		return false
+	}
+	if u, err := url.Parse(loc); err == nil {
+		loc = u.Path
+	}
+	loc = strings.ToLower(strings.TrimRight(loc, "/"))
+	if loc == "/login" || strings.HasSuffix(loc, "/login") {
+		return true
+	}
+	ent := strings.ToLower(strings.Trim(entrance, "/"))
+	return ent != "" && loc == "/"+ent
 }
 
 func panelUnauthenticated(status int, body []byte) bool {

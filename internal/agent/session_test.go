@@ -44,3 +44,20 @@ func TestPanelUnauthenticated(t *testing.T) {
 		t.Fatal("html false positive")
 	}
 }
+
+func TestPanelLoginRedirect(t *testing.T) {
+	h := http.Header{"Location": {"/login"}}
+	if !panelLoginRedirect(http.StatusFound, h, "") {
+		t.Fatal("login redirect not detected")
+	}
+	h = http.Header{"Location": {"http://127.0.0.1:1/myentrance/"}}
+	if !panelLoginRedirect(http.StatusFound, h, "myentrance") {
+		t.Fatal("entrance redirect not detected")
+	}
+	if panelLoginRedirect(http.StatusOK, h, "myentrance") {
+		t.Fatal("200 must not match")
+	}
+	if panelLoginRedirect(http.StatusFound, http.Header{"Location": {"/hosts"}}, "myentrance") {
+		t.Fatal("normal redirect must not match")
+	}
+}
