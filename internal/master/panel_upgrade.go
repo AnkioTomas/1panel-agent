@@ -38,7 +38,7 @@ func (s *Server) handleUpgradePanelMaster(w http.ResponseWriter, r *http.Request
 
 	cookies := r.Cookies()
 	client := panel.NewInsecureClient(12 * time.Minute)
-	res, err := panel.Upgrade(client, s.LocalPanel, s.Entrance, cookies, req.Version)
+	res, err := panel.Upgrade(client, s.localPanelURL(), s.Entrance, cookies, req.Version)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)

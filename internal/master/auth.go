@@ -55,10 +55,11 @@ func (s *Server) validAuthCookie(r *http.Request) bool {
 
 // localPanelCodeOK 向本地 1Panel 确认 Cookie 是否仍为有效登录态。
 func (s *Server) localPanelCodeOK(cookieHeader string) bool {
-	if s.LocalPanel == "" || cookieHeader == "" {
+	local := s.localPanelURL()
+	if local == "" || cookieHeader == "" {
 		return false
 	}
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(s.LocalPanel, "/")+"/api/v2/dashboard/base/os", nil)
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(local, "/")+"/api/v2/dashboard/base/os", nil)
 	if err != nil {
 		return false
 	}

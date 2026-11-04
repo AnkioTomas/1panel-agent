@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // clientHostKey 在反代 Director 中保存浏览器原始 Host，供 ModifyResponse 注入使用。
@@ -16,6 +18,23 @@ type clientHostKey struct{}
 
 // sidebarHook 生成注入 1Panel HTML 的侧边栏切换脚本（含 Master IP 展示）。
 func sidebarHook(masterIP, entrance string) string {
+	hookCache.Lock()
+	defer hookCache.Unlock()
+	if hookCache.ip == masterIP && hookCache.entrance == entrance && hookCache.out != "" {
+		return hookCache.out
+	}
+	out := buildSidebarHook(masterIP, entrance)
+	hookCache.ip, hookCache.entrance, hookCache.out = masterIP, entrance, out
+	return out
+}
+
+// hookCache 只缓存最近一份，避免 Host 头可控导致缓存无界增长。
+var hookCache struct {
+	sync.Mutex
+	ip, entrance, out string
+}
+
+func buildSidebarHook(masterIP, entrance string) string {
 	if masterIP == "" {
 		masterIP = "-"
 	}
@@ -26,6 +45,11 @@ func sidebarHook(masterIP, entrance string) string {
 var MASTER_IP=__MASTER_IP__;
 var ENTRANCE=__ENTRANCE__;
 
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
 function cookie(name){
   var m=document.cookie.match(new RegExp("(?:^|; )"+name+"=([^;]*)"));
   return m?decodeURIComponent(m[1]):"";
@@ -207,9 +231,9 @@ function renderPop(btn, agents){
       var g=agentGroup(a);
       if(g!==last){
         last=g;
-        html+='<div class="mp-ns-group">'+g+"</div>";
+        html+='<div class="mp-ns-group">'+esc(g)+"</div>";
       }
-      html+=menuItem('data-mp="go" data-id="'+a.id+'"', "node", agentTitle(a), a.remote_ip||"", id===a.id, "");
+      html+=menuItem('data-mp="go" data-id="'+esc(a.id)+'"', "node", esc(agentTitle(a)), esc(a.remote_ip||""), id===a.id, "");
     }
   }
   html+='<div class="mp-ns-sep"></div>';
@@ -374,13 +398,23 @@ func (s *Server) injectHookHTML(body []byte, masterIP string) []byte {
 		return body
 	}
 	hook := []byte(sidebarHook(masterIP, s.Entrance))
-	if i := bytes.LastIndex(bytes.ToLower(body), []byte("</body>")); i >= 0 {
+	if i := lastIndexFold(body, []byte("</body>")); i >= 0 {
 		out := append([]byte{}, body[:i]...)
 		out = append(out, hook...)
 		out = append(out, body[i:]...)
 		return out
 	}
 	return append(body, hook...)
+}
+
+// lastIndexFold 大小写不敏感地反向查找 sep（sep 须为小写 ASCII），不复制 body。
+func lastIndexFold(body, sep []byte) int {
+	for i := len(body) - len(sep); i >= 0; i-- {
+		if bytes.EqualFold(body[i:i+len(sep)], sep) {
+			return i
+		}
+	}
+	return -1
 }
 
 // dropHopHeaders 删除重写 body 后失效的长度/编码类响应头。
@@ -396,20 +430,20 @@ func dropHopHeaders(h map[string][]string) {
 }
 
 // wrapLocalProxy 配置本机反代：强制 gzip（便于 HTML 注入解压），静态资源原样透传压缩。
-func (s *Server) wrapLocalProxy() {
-	if s.localProxy == nil {
+func (s *Server) wrapLocalProxy(rp *httputil.ReverseProxy) {
+	if rp == nil {
 		return
 	}
-	upstream := s.localProxy.Director
-	s.localProxy.Director = func(r *http.Request) {
+	upstream := rp.Director
+	rp.Director = func(r *http.Request) {
 		*r = *r.WithContext(context.WithValue(r.Context(), clientHostKey{}, r.Host))
 		upstream(r)
 		// 只谈 gzip：HTML 注入能解压；JS/CSS 压缩体直接给浏览器。
 		r.Header.Set("Accept-Encoding", "gzip")
 	}
-	s.localProxy.ModifyResponse = func(resp *http.Response) error {
+	rp.ModifyResponse = func(resp *http.Response) error {
 		ct := resp.Header.Get("Content-Type")
-		if !strings.Contains(ct, "text/html") {
+		if resp.StatusCode != http.StatusOK || !strings.Contains(ct, "text/html") {
 			return nil
 		}
 		var body []byte
@@ -419,20 +453,21 @@ func (s *Server) wrapLocalProxy() {
 		case "gzip":
 			gr, gerr := gzip.NewReader(resp.Body)
 			if gerr != nil {
-				return nil
+				_ = resp.Body.Close()
+				return gerr
 			}
 			body, err = io.ReadAll(gr)
 			_ = gr.Close()
 			_ = resp.Body.Close()
 			if err != nil {
-				return nil
+				return err
 			}
 			resp.Header.Del("Content-Encoding")
 		default:
 			body, err = io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
 			if err != nil {
-				return nil
+				return err
 			}
 		}
 		var req *http.Request

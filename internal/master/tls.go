@@ -153,7 +153,7 @@ func (s *Server) listenAndServe(handler http.Handler) error {
 	if store.get() != nil {
 		mode = "mux http/https"
 	}
-	log.Printf("master listening %s on %s (local panel=%s entrance=%s)", mode, s.Listen, s.LocalPanel, s.Entrance)
+	log.Printf("master listening %s on %s (local panel=%s entrance=%s)", mode, s.Listen, s.localPanelURL(), s.Entrance)
 	if err := m.Serve(); err != nil {
 		return err
 	}
@@ -166,7 +166,9 @@ func (s *Server) onPanelTLSChange(ready bool) {
 		return
 	}
 	base := panel.LocalPanelURLWithSSL(s.InternalPort, ready)
+	s.proxyMu.Lock()
 	s.LocalPanel = base
+	s.proxyMu.Unlock()
 	s.rebuildLocalProxy()
 	log.Printf("local panel upstream -> %s (ssl_ready=%v)", base, ready)
 }

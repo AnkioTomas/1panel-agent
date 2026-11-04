@@ -47,7 +47,7 @@ func (s *Server) handlePanelSSL(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"enable": req.Enable}
 	var masterErr string
 
-	if err := panel.UpdateSSL(client, s.LocalPanel, s.Entrance, cookies, req.Enable, domain); err != nil {
+	if err := panel.UpdateSSL(client, s.localPanelURL(), s.Entrance, cookies, req.Enable, domain); err != nil {
 		masterErr = err.Error()
 	} else if err := s.waitPanelSSL(req.Enable, 90*time.Second); err != nil {
 		masterErr = err.Error()

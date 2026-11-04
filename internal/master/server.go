@@ -35,6 +35,7 @@ type Server struct {
 	InternalPort  int    // 本机 1Panel 避让端口
 	sessionSecret string // 内存 Web Session Secret（绝不上盘）
 	reg           *Registry
+	proxyMu       sync.RWMutex // 保护 LocalPanel / localProxy（证书热更新会重建）
 	localProxy    *httputil.ReverseProxy
 	tokenMu       sync.RWMutex
 
@@ -96,11 +97,14 @@ func New() (*Server, error) {
 
 // rebuildLocalProxy 按当前 LocalPanel（含 https）重建反代。
 func (s *Server) rebuildLocalProxy() {
-	if s.LocalPanel == "" {
+	base := s.localPanelURL()
+	if base == "" {
+		s.proxyMu.Lock()
 		s.localProxy = nil
+		s.proxyMu.Unlock()
 		return
 	}
-	u, err := url.Parse(s.LocalPanel)
+	u, err := url.Parse(base)
 	if err != nil {
 		log.Printf("warn: parse local_panel url: %v", err)
 		return
@@ -112,13 +116,34 @@ func (s *Server) rebuildLocalProxy() {
 	if u.Scheme == "https" {
 		rp.Transport = &http.Transport{
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // 本机面板常自签
-			MaxIdleConns:        32,
+			MaxIdleConns:        64,
+			MaxIdleConnsPerHost: 32,
 			IdleConnTimeout:     90 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second,
 		}
+	} else {
+		rp.Transport = &http.Transport{
+			MaxIdleConns:        64,
+			MaxIdleConnsPerHost: 32,
+			IdleConnTimeout:     90 * time.Second,
+		}
 	}
+	s.wrapLocalProxy(rp)
+	s.proxyMu.Lock()
 	s.localProxy = rp
-	s.wrapLocalProxy()
+	s.proxyMu.Unlock()
+}
+
+func (s *Server) localPanelURL() string {
+	s.proxyMu.RLock()
+	defer s.proxyMu.RUnlock()
+	return s.LocalPanel
+}
+
+func (s *Server) getLocalProxy() *httputil.ReverseProxy {
+	s.proxyMu.RLock()
+	defer s.proxyMu.RUnlock()
+	return s.localProxy
 }
 
 // Run 注册路由并阻塞监听（面板证书可用时自动 HTTPS Mux）。
@@ -166,8 +191,8 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 // serveLocalPanel 反代本机 1Panel；无上游则 404。
 func (s *Server) serveLocalPanel(w http.ResponseWriter, r *http.Request) {
-	if s.localProxy != nil {
-		s.localProxy.ServeHTTP(w, r)
+	if rp := s.getLocalProxy(); rp != nil {
+		rp.ServeHTTP(w, r)
 		return
 	}
 	http.NotFound(w, r)
@@ -232,9 +257,9 @@ func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	}
 	info := AgentInfo{
 		ID:           reg.ID,
-		Hostname:     reg.Hostname,
-		Name:         reg.Name,
-		Group:        reg.Group,
+		Hostname:     config.SanitizeMeta(reg.Hostname),
+		Name:         config.SanitizeMeta(reg.Name),
+		Group:        config.SanitizeMeta(reg.Group),
 		PanelURL:     reg.PanelURL,
 		RemoteIP:     remoteIP,
 		PanelVersion: reg.PanelVersion,
