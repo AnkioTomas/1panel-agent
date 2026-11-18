@@ -152,7 +152,13 @@ func (c *Config) ResolveTag() (string, error) {
 		return tag, nil
 	}
 	var lastErr error
-	for _, prefix := range c.prefixes() {
+	prefixes := c.prefixes()
+	for i, prefix := range prefixes {
+		desc := prefix
+		if desc == "" {
+			desc = c.GitHubAPI
+		}
+		fmt.Fprintf(os.Stderr, "checking release %d/%d: %s ...\n", i+1, len(prefixes), desc)
 		tag, err := c.fetchLatestTag(prefix)
 		if err != nil {
 			lastErr = err
@@ -235,12 +241,16 @@ func (c *Config) DownloadBinary(destDir string) (*Result, error) {
 
 	var lastErr error
 	ok := false
-	for _, prefix := range c.prefixes() {
+	prefixes := c.prefixes()
+	for i, prefix := range prefixes {
 		url := c.assetURL(prefix, tag, name)
+		fmt.Fprintf(os.Stderr, "downloading %s (%s) %d/%d: %s ...\n", name, tag, i+1, len(prefixes), url)
 		if err := c.httpGetFile(url, outPath); err != nil {
 			lastErr = err
+			fmt.Fprintf(os.Stderr, "  failed: %v\n", err)
 			continue
 		}
+		fmt.Fprintf(os.Stderr, "  OK\n")
 		ok = true
 		break
 	}
