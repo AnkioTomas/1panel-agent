@@ -67,7 +67,9 @@ jobs:
           done
           cp install.sh dist/install.sh
           chmod +x dist/install.sh
-          (cd dist && sha256sum 1pm_* install.sh > checksums.txt)
+          cp deploy/force-update.sh dist/force-update.sh
+          chmod +x dist/force-update.sh
+          (cd dist && sha256sum 1pm_* install.sh force-update.sh > checksums.txt)
           ls -la dist
 
       - name: Create GitHub Release
@@ -79,7 +81,6 @@ jobs:
           body: |
             ## Install Master
 
-      
             ```bash
             curl -fsSL https://cdn.jsdelivr.net/gh/AnkioTomas/1panel-agent@${{ steps.ver.outputs.version }}/install.sh | sudo bash
             ```
@@ -87,10 +88,17 @@ jobs:
             curl -fsSL https://gh-proxy.com/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/install.sh | sudo bash
             ```
 
+            ## Force Update (1pm update fails)
+
+            ```bash
+            curl -fsSL https://gh-proxy.com/https://github.com/AnkioTomas/1panel-agent/releases/latest/download/force-update.sh | sudo bash
+            ```
+
             Optional: `INSTALL_CDN=auto|cn|global` `VERSION=vX.Y.Z`
           files: |
             dist/1pm_*
             dist/install.sh
+            dist/force-update.sh
             dist/checksums.txt
           fail_on_unmatched_files: true
         env:
