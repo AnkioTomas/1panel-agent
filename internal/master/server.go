@@ -2,8 +2,10 @@
 package master
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -209,6 +211,31 @@ func (s *Server) dropDeadSession(sess *Session) {
 	s.reg.Remove(sess.Info.ID, sess.Mux)
 }
 
+// refreshAgentSession 通知 Agent 清除面板会话缓存并重新登录。
+func (s *Server) refreshAgentSession(sess *Session) {
+	if sess == nil || sess.Mux == nil {
+		return
+	}
+	stream, err := sess.Mux.OpenStream()
+	if err != nil {
+		log.Printf("refresh session: open stream for %s: %v", sess.Info.ID, err)
+		return
+	}
+	defer stream.Close()
+	if err := protocol.WriteJSON(stream, &protocol.RequestMeta{Type: protocol.StreamTypePanelControl}); err != nil {
+		log.Printf("refresh session: write meta for %s: %v", sess.Info.ID, err)
+		return
+	}
+	payload, _ := json.Marshal(protocol.PanelControl{Action: "refresh"})
+	if err := protocol.CopyChunks(stream, bytes.NewReader(payload)); err != nil {
+		log.Printf("refresh session: write body for %s: %v", sess.Info.ID, err)
+		return
+	}
+	// Drain response to keep protocol in sync (response is irrelevant for this fire-and-forget).
+	_, _ = io.Copy(io.Discard, protocol.NewChunkReader(stream))
+	log.Printf("refresh session: sent signal to %s", sess.Info.ID)
+}
+
 // handleAgentWS 校验签名后接受 Agent WebSocket，完成注册并挂入 smux Registry。
 func (s *Server) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	ts := r.URL.Query().Get("timestamp")
@@ -318,9 +345,10 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, sess *Session
 		return true
 	}
 
-	// 子节点把浏览器踢去登录页时，改走主节点登录。
+	// 子节点把浏览器踢去登录页时：通知 Agent 刷新 session 后再 redirect。
 	if locationIsLoginRedirect(respMeta.Headers) {
 		_, _ = io.Copy(io.Discard, protocol.NewChunkReader(stream))
+		s.refreshAgentSession(sess)
 		s.redirectToMasterLogin(w, r, "")
 		return true
 	}
